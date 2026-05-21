@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 
 export type Role = "landing" | "creator" | "business" | "fan" | "admin";
-export type Tab = "dashboard" | "feed" | "campaigns" | "messages" | "wallet" | "admin";
+export type Tab = "dashboard" | "feed" | "campaigns" | "messages" | "wallet" | "admin" | "profile";
 
 export interface AuthUser {
   id: string;

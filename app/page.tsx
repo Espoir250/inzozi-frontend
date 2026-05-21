@@ -12,6 +12,7 @@ import { ViewerFeed } from "@/components/ViewerFeed";
 import { MessagingPanel } from "@/components/MessagingPanel";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { WalletDashboard } from "@/components/WalletDashboard";
+import { CreatorProfile } from "@/components/CreatorProfile";
 
 export default function Home() {
   const router = useRouter();
@@ -45,6 +46,10 @@ export default function Home() {
 
       case "wallet":
         return <WalletDashboard />;
+
+      case "profile":
+        if (activeRole === "creator") return <CreatorProfile />;
+        return <ViewerFeed />;
 
       case "admin":
         if (activeRole === "admin") return <AdminDashboard />;

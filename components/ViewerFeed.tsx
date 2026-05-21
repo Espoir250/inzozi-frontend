@@ -50,6 +50,7 @@ export const ViewerFeed: React.FC = () => {
 
   // Comment input state
   const [commentText, setCommentText] = useState<{ [postId: string]: string }>({});
+  const [likedPostIds, setLikedPostIds] = useState<string[]>([]);
   const [creatorSearch, setCreatorSearch] = useState("");
   const [creatorNicheFilter, setCreatorNicheFilter] = useState("all");
   const creatorNicheOptions = Array.from(new Set(creators.map(creator => creator.niche).filter(Boolean))).sort();
@@ -78,6 +79,13 @@ export const ViewerFeed: React.FC = () => {
 
   const handleUnlockPost = (postId: string) => {
     unlockPremiumPost(postId);
+  };
+
+  const handleLikePost = (postId: string) => {
+    if (likedPostIds.includes(postId)) return;
+
+    likePost(postId);
+    setLikedPostIds([...likedPostIds, postId]);
   };
 
   const handleSendTip = (e: React.FormEvent) => {
@@ -150,6 +158,7 @@ export const ViewerFeed: React.FC = () => {
                 const locked = isPostLocked(post);
                 const creatorObj = creators.find(c => c.id === post.creatorId);
                 const isVerified = creatorObj ? creatorObj.verified : false;
+                const isLiked = likedPostIds.includes(post.id);
 
                 return (
                   <div key={post.id} className="glass-panel rounded-2xl border border-white/5 overflow-hidden flex flex-col">
@@ -246,10 +255,11 @@ export const ViewerFeed: React.FC = () => {
                       <div className="p-4 border-t border-white/5 bg-white/2 flex flex-col gap-4">
                         <div className="flex gap-6 text-xs font-semibold text-zinc-400">
                           <button 
-                            onClick={() => likePost(post.id)}
-                            className="flex items-center gap-1.5 hover:text-rose-400 transition-all"
+                            onClick={() => handleLikePost(post.id)}
+                            className={`flex items-center gap-1.5 transition-all ${isLiked ? "text-rose-500" : "hover:text-rose-400"}`}
+                            aria-pressed={isLiked}
                           >
-                            <Heart className="w-4.5 h-4.5" />
+                            <Heart className="w-4.5 h-4.5" fill={isLiked ? "currentColor" : "none"} />
                             <span>{post.likes} Likes</span>
                           </button>
                           <div className="flex items-center gap-1.5">

@@ -54,7 +54,7 @@ export const Navbar: React.FC = () => {
     setShowAccountMenu(false);
     setShowNotifications(false);
     setShowRoleSelector(false);
-    setActiveTab("dashboard");
+    setActiveTab(activeRole === "creator" ? "profile" : "dashboard");
     router.push("/");
   };
 
