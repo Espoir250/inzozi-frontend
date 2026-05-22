@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useApp } from "@/context/AppContext";
+import { useApp, Post } from "@/context/AppContext";
 import { 
   Plus, 
   Settings, 
@@ -13,7 +13,12 @@ import {
   Image as ImageIcon, 
   Video, 
   Check, 
-  FolderHeart
+  FolderHeart,
+  X,
+  Heart,
+  MessageSquare,
+  TrendingUp,
+  Share2
 } from "lucide-react";
 
 export const CreatorDashboard: React.FC = () => {
@@ -35,6 +40,9 @@ export const CreatorDashboard: React.FC = () => {
   // Settings states
   const [subFee, setSubFee] = useState("10.00");
   const [showSettingsSaved, setShowSettingsSaved] = useState(false);
+
+  // Post Metrics state
+  const [selectedMetricsPost, setSelectedMetricsPost] = useState<Post | null>(null);
 
   const handlePublish = (e: React.FormEvent) => {
     e.preventDefault();
@@ -331,15 +339,168 @@ export const CreatorDashboard: React.FC = () => {
                   <p className="text-zinc-400 text-xs mt-1 line-clamp-2">{post.content}</p>
                 </div>
 
+                {/* Engagement counts */}
                 <div className="flex items-center gap-4 text-[11px] text-zinc-500 border-t border-white/5 pt-2.5 mt-auto">
                   <span>👍 {post.likes} Likes</span>
                   <span>💬 {post.comments.length} Comments</span>
                 </div>
+
+                {/* Post Comments Ledger */}
+                <div className="mt-1">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase block tracking-wider mb-1">Fan Comments</span>
+                  {post.comments.length === 0 ? (
+                    <div className="text-[10px] text-zinc-600 italic py-1 bg-white/2 rounded-lg px-2 text-center">No comments yet.</div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5 bg-white/2 rounded-xl p-2.5 border border-white/5 max-h-24 overflow-y-auto">
+                      {post.comments.map(c => (
+                        <div key={c.id} className="text-[10px] leading-normal border-b border-white/2 last:border-b-0 pb-1 last:pb-0">
+                          <span className="font-bold text-zinc-300 mr-1">{c.user}:</span>
+                          <span className="text-zinc-400">{c.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* View Post Metrics Button */}
+                <button
+                  onClick={() => setSelectedMetricsPost(post)}
+                  className="w-full mt-1.5 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Activity className="w-3.5 h-3.5 text-purple-400" />
+                  <span>View Post Metrics</span>
+                </button>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Post Performance Metrics Dialog Modal */}
+      {selectedMetricsPost && (() => {
+        const impressions = (parseInt(selectedMetricsPost.id.replace(/\D/g, '')) || 0) % 1500 + (selectedMetricsPost.likes * 24) + (selectedMetricsPost.comments.length * 48) + 215;
+        const reach = Math.floor(impressions * 0.82);
+        const engagementRate = impressions > 0 ? (((selectedMetricsPost.likes + selectedMetricsPost.comments.length) / impressions) * 100).toFixed(2) : "0.00";
+        const clicks = Math.floor(impressions * 0.08);
+        const shares = Math.floor(selectedMetricsPost.likes * 0.15);
+        const subsEarned = Math.floor(selectedMetricsPost.likes * 0.05);
+
+        return (
+          <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg glass-panel p-6 rounded-2xl border border-white/10 shadow-2xl relative flex flex-col gap-5">
+              
+              {/* Modal Header */}
+              <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-purple-400" />
+                  <div>
+                    <h3 className="text-base font-bold text-white">Post Performance Analysis</h3>
+                    <p className="text-[10px] text-zinc-500 truncate max-w-[280px]">For: &quot;{selectedMetricsPost.title}&quot;</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedMetricsPost(null)}
+                  className="p-1 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-all"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Analytics grid */}
+              <div className="grid grid-cols-3 gap-3">
+                
+                {/* 1. IMPRESSIONS */}
+                <div className="p-3 rounded-xl bg-white/2 border border-white/5 flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 text-purple-400">
+                    <Eye className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-bold uppercase tracking-wider">Impressions</span>
+                  </div>
+                  <span className="text-lg font-black text-white mt-1">{impressions.toLocaleString()}</span>
+                  <span className="text-[8px] text-zinc-500">Total views generated</span>
+                </div>
+
+                {/* 2. REACH */}
+                <div className="p-3 rounded-xl bg-white/2 border border-white/5 flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 text-cyan-400">
+                    <Users className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-bold uppercase tracking-wider">Unique Reach</span>
+                  </div>
+                  <span className="text-lg font-black text-white mt-1">{reach.toLocaleString()}</span>
+                  <span className="text-[8px] text-zinc-500">Unique fan accounts</span>
+                </div>
+
+                {/* 3. ENGAGEMENT RATE */}
+                <div className="p-3 rounded-xl bg-white/2 border border-white/5 flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 text-emerald-400">
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-bold uppercase tracking-wider">Engagement</span>
+                  </div>
+                  <span className="text-lg font-black text-white mt-1">{engagementRate}%</span>
+                  <span className="text-[8px] text-zinc-500">Likes & comments / views</span>
+                </div>
+
+              </div>
+
+              {/* Engagement breakdown & action counts */}
+              <div className="grid grid-cols-2 gap-4 rounded-xl bg-white/2 border border-white/5 p-4 text-xs">
+                
+                <div className="space-y-2">
+                  <h4 className="font-bold text-zinc-400 uppercase tracking-widest text-[9px] mb-2">Engagement breakdown</h4>
+                  <div className="flex justify-between items-center text-zinc-300">
+                    <span className="flex items-center gap-1"><Heart className="w-3 h-3 text-rose-500" /> Likes</span>
+                    <span className="font-bold text-white">{selectedMetricsPost.likes}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-zinc-300">
+                    <span className="flex items-center gap-1"><MessageSquare className="w-3 h-3 text-purple-400" /> Comments</span>
+                    <span className="font-bold text-white">{selectedMetricsPost.comments.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-zinc-300">
+                    <span className="flex items-center gap-1"><Share2 className="w-3 h-3 text-cyan-400" /> Shares</span>
+                    <span className="font-bold text-white">{shares}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 border-l border-white/5 pl-4">
+                  <h4 className="font-bold text-zinc-400 uppercase tracking-widest text-[9px] mb-2">Conversion Outcomes</h4>
+                  <div className="flex justify-between items-center text-zinc-300">
+                    <span>Link Clicks</span>
+                    <span className="font-bold text-white">{clicks}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-zinc-300">
+                    <span>Subs Gained</span>
+                    <span className="font-bold text-white">+{subsEarned}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-zinc-300">
+                    <span>Estimated Payout</span>
+                    <span className="font-bold text-emerald-400">${(selectedMetricsPost.likes * 0.45 + clicks * 0.05).toFixed(2)}</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Recommendations */}
+              <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/10 text-[10px] text-zinc-400 leading-normal flex items-start gap-2">
+                <span className="font-bold text-purple-400 uppercase tracking-wider shrink-0 mt-0.5">Insight:</span>
+                <span>
+                  {parseFloat(engagementRate) > 5.0 
+                    ? "Exceptional engagement! Your audience is highly responsive to this content format. We recommend publishing more premium pay-per-view videos in this topic niche." 
+                    : "Consistent impressions. To increase engagement rates, consider adding interactive call-to-actions in your next post descriptions, prompting fans to leave feedback in comments."
+                  }
+                </span>
+              </div>
+
+              {/* Close Button */}
+              <button
+                onClick={() => setSelectedMetricsPost(null)}
+                className="w-full py-2.5 rounded-xl bg-gradient-brand text-white text-xs font-bold shadow-md"
+              >
+                Done
+              </button>
+
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

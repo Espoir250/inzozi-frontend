@@ -351,7 +351,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedUser) {
         setCurrentUser(savedUser);
         setActiveRole(savedUser.role);
-        setActiveTab(savedUser.role === "fan" ? "feed" : "dashboard");
+        setActiveTab(savedUser.role === "fan" || savedUser.role === "creator" ? "feed" : "dashboard");
       } else if (savedRole && ["landing", "creator", "business", "fan", "admin"].includes(savedRole)) {
         setActiveRole(savedRole);
       }
@@ -423,7 +423,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("inzozi_activeRole", newUser.role);
     setCurrentUser(newUser);
     setActiveRole(newUser.role);
-    setActiveTab(newUser.role === "fan" ? "feed" : "dashboard");
+    setActiveTab(newUser.role === "fan" || newUser.role === "creator" ? "feed" : "dashboard");
     return { ok: true, message: "Account created successfully." };
   };
 
@@ -441,7 +441,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("inzozi_activeRole", user.role);
     setCurrentUser(user);
     setActiveRole(user.role);
-    setActiveTab(user.role === "fan" ? "feed" : "dashboard");
+    setActiveTab(user.role === "fan" || user.role === "creator" ? "feed" : "dashboard");
     return { ok: true, message: "Welcome back." };
   };
 

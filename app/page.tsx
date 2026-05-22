@@ -48,8 +48,7 @@ export default function Home() {
         return <WalletDashboard />;
 
       case "profile":
-        if (activeRole === "creator") return <CreatorProfile />;
-        return <ViewerFeed />;
+        return <CreatorProfile />;
 
       case "admin":
         if (activeRole === "admin") return <AdminDashboard />;

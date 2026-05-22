@@ -12,7 +12,8 @@ import {
   Users, 
   ShieldAlert, 
   CheckSquare,
-  Heart
+  Heart,
+  Settings
 } from "lucide-react";
 
 export const Sidebar: React.FC = () => {
@@ -33,7 +34,8 @@ export const Sidebar: React.FC = () => {
           { id: "feed", label: "My Content Feed", icon: <Rss className="w-5 h-5" /> },
           { id: "campaigns", label: "Brand Contracts", icon: <Briefcase className="w-5 h-5" /> },
           { id: "messages", label: "Chat Inbox", icon: <MessageSquare className="w-5 h-5" /> },
-          { id: "wallet", label: "Earnings Wallet", icon: <Wallet className="w-5 h-5" /> }
+          { id: "wallet", label: "Earnings Wallet", icon: <Wallet className="w-5 h-5" /> },
+          { id: "profile", label: "Personal Settings", icon: <Settings className="w-5 h-5" /> }
         ];
       case "business":
         return [
@@ -46,7 +48,8 @@ export const Sidebar: React.FC = () => {
         return [
           { id: "feed", label: "Discover Feed", icon: <Rss className="w-5 h-5" /> },
           { id: "messages", label: "My Support Inbox", icon: <MessageSquare className="w-5 h-5" /> },
-          { id: "wallet", label: "Fan Wallet", icon: <Wallet className="w-5 h-5" /> }
+          { id: "wallet", label: "Fan Wallet", icon: <Wallet className="w-5 h-5" /> },
+          { id: "profile", label: "Personal Settings", icon: <Settings className="w-5 h-5" /> }
         ];
       case "admin":
         return [
