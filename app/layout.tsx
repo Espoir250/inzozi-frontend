@@ -1,21 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/Header";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { AppProvider } from "@/context/AppContext";
 
 export const metadata: Metadata = {
-  title: "Inzozi Market",
-  description: "Discover unique stays, curated experiences, and modern travel homes across Rwanda.",
+  title: "InzoziMarket – Dream Creator & Monetization Marketplace",
+  description: "Transforming dreams into economic opportunities. A next-generation platform for content monetization, influencer marketing collaborations, and transparent payment escrow.",
 };
 
 export default function RootLayout({
@@ -26,11 +15,12 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className="h-full antialiased"
     >
-      <body className="min-h-full bg-[var(--brand-white)] text-[var(--brand-black)]">
-        <Header />
-        <main>{children}</main>
+      <body className="min-h-full flex flex-col bg-white text-black relative overflow-x-hidden">
+        <AppProvider>
+          <div className="flex-1 flex flex-col z-10">{children}</div>
+        </AppProvider>
       </body>
     </html>
   );
