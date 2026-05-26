@@ -88,6 +88,7 @@ export const CreatorProfile: React.FC = () => {
   // Settings State
   const [settings, setSettings] = useState<PersonalSettings>(defaultSettings);
   const [addressSaved, setAddressSaved] = useState(false);
+  const [showProfileSaved, setShowProfileSaved] = useState(false);
   const [activeConnectingSocial, setActiveConnectingSocial] = useState<"instagram" | "tiktok" | "youtube" | "twitter" | null>(null);
   
   // Custom handles for OAuth inputs
@@ -104,7 +105,20 @@ export const CreatorProfile: React.FC = () => {
   const [profileLocation, setProfileLocation] = useState(myCreatorProfile.location || "");
   const [profileContact, setProfileContact] = useState(myCreatorProfile.contact || currentUser?.phone || currentUser?.email || "");
   const [profileBio, setProfileBio] = useState(myCreatorProfile.bio || "");
-  const [showProfileSaved, setShowProfileSaved] = useState(false);
+  
+  // Avatar state (Base64 preview)
+  const [profileAvatar, setProfileAvatar] = useState<string>(myCreatorProfile.avatar || "");
+  // Handle avatar file selection and preview
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfileAvatar(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Load settings from localStorage
   useEffect(() => {
@@ -145,10 +159,12 @@ export const CreatorProfile: React.FC = () => {
     e.preventDefault();
     updateCreatorProfile(myCreatorProfile.id, {
       name: profileName,
-      niche: profileNiche,
+      // only include niche for creators
+      ...(activeRole === "creator" && { niche: profileNiche }),
       location: profileLocation,
       contact: profileContact,
-      bio: profileBio
+      bio: profileBio,
+      avatar: profileAvatar,
     });
     setShowProfileSaved(true);
     setTimeout(() => setShowProfileSaved(false), 2000);
@@ -363,108 +379,70 @@ export const CreatorProfile: React.FC = () => {
                 </form>
               </div>
 
-              {/* Creator-only Public Profile Form */}
-              {activeRole === "creator" && (
-                <div className="glass-panel p-6 rounded-2xl border border-white/5 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-36 h-36 bg-cyan-500/5 rounded-full blur-3xl"></div>
-                  
-                  <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-                    <UserRound className="w-5 h-5 text-cyan-400" />
-                    <span>Public Studio Profile Details</span>
-                  </h3>
-                  
-                  <form onSubmit={handleSaveProfile} className="space-y-5">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <label className="block">
-                        <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase flex items-center gap-1.5">
-                          Display Name
-                        </span>
-                        <input
-                          required
-                          value={profileName}
-                          onChange={(e) => setProfileName(e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-xl glass-input text-sm"
-                          placeholder="Your creator or studio name"
-                        />
-                      </label>
-
-                      <label className="block">
-                        <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase flex items-center gap-1.5">
-                          Niche
-                        </span>
-                        <input
-                          required
-                          list="creator-niche-options-settings"
-                          value={profileNiche}
-                          onChange={(e) => setProfileNiche(e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-xl glass-input text-sm"
-                          placeholder="e.g. Beauty, Tech, Fashion"
-                        />
-                        <datalist id="creator-niche-options-settings">
-                          {nicheOptions.map(option => (
-                            <option key={option} value={option} />
-                          ))}
-                        </datalist>
-                      </label>
-
-                      <label className="block">
-                        <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase flex items-center gap-1.5">
-                          Location
-                        </span>
-                        <input
-                          required
-                          value={profileLocation}
-                          onChange={(e) => setProfileLocation(e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-xl glass-input text-sm"
-                          placeholder="City, Country"
-                        />
-                      </label>
-
-                      <label className="block">
-                        <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase flex items-center gap-1.5">
-                          Contact Info
-                        </span>
-                        <input
-                          required
-                          value={profileContact}
-                          onChange={(e) => setProfileContact(e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-xl glass-input text-sm"
-                          placeholder="Email, WhatsApp, or booking link"
-                        />
-                      </label>
-                    </div>
-
-                    <label className="block">
-                      <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase">Bio</span>
-                      <textarea
-                        required
-                        rows={3}
-                        value={profileBio}
-                        onChange={(e) => setProfileBio(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-xl glass-input text-sm resize-none"
-                        placeholder="Introduce yourself to brands and fans..."
-                      />
-                    </label>
-
-                    <div className="flex items-center gap-4 pt-2">
-                      <button
-                        type="submit"
-                        className="px-5 py-2.5 rounded-xl bg-gradient-brand text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2"
-                      >
-                        <Save className="w-3.5 h-3.5" />
-                        <span>Update Studio Profile</span>
-                      </button>
-                      
-                      {showProfileSaved && (
-                        <span className="text-emerald-400 text-xs font-semibold flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> Creator profile updated successfully
-                        </span>
-                      )}
-                    </div>
-                  </form>
-                </div>
-              )}
-            </div>
+             {/* Public Profile Form for all roles */}
+{(
+  <div className="glass-panel p-6 rounded-2xl border border-white/5 relative overflow-hidden">
+    <div className="absolute top-0 right-0 w-36 h-36 bg-cyan-500/5 rounded-full blur-3xl"></div>
+    <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+      <UserRound className="w-5 h-5 text-cyan-400" />
+      <span>{activeRole === "creator" ? "Public Studio Profile Details" : "Public Profile Details"}</span>
+    </h3>
+    <form onSubmit={handleSaveProfile} className="space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label className="block">
+          <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase flex items-center gap-1.5">Display Name</span>
+          <input required value={profileName} onChange={e => setProfileName(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-xl glass-input text-sm" placeholder="Your name" />
+        </label>
+        {activeRole === "creator" && (
+          <label className="block">
+            <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase flex items-center gap-1.5">Niche</span>
+            <input required list="creator-niche-options-settings" value={profileNiche} onChange={e => setProfileNiche(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-xl glass-input text-sm" placeholder="e.g. Beauty, Tech, Fashion" />
+            <datalist id="creator-niche-options-settings">
+              {nicheOptions.map(option => (<option key={option} value={option} />))}
+            </datalist>
+          </label>
+        )}
+        <label className="block">
+          <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase flex items-center gap-1.5">Location</span>
+          <input required value={profileLocation} onChange={e => setProfileLocation(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-xl glass-input text-sm" placeholder="City, Country" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase flex items-center gap-1.5">Email</span>
+          <input required value={profileContact} onChange={e => setProfileContact(e.target.value)}
+            placeholder="Enter email address"
+            className="w-full px-4 py-2.5 rounded-xl glass-input text-sm" />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase">Bio</span>
+          <textarea required rows={3} value={profileBio} onChange={e => setProfileBio(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-xl glass-input text-sm resize-none" placeholder="Introduce yourself..." />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-zinc-400 mb-1.5 uppercase flex items-center gap-1.5">Avatar</span>
+          <input type="file" accept="image/*" onChange={handleAvatarChange}
+            className="w-full px-4 py-2.5 rounded-xl glass-input text-sm" />
+        </label>
+        {profileAvatar && (
+          <img src={profileAvatar} alt="Avatar preview" className="mt-2 w-20 h-20 rounded-full object-cover" />
+        )}
+      </div>
+      <div className="flex items-center gap-4 pt-2">
+        <button type="submit" className="px-5 py-2.5 rounded-xl bg-gradient-brand text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2">
+          <Save className="w-3.5 h-3.5" />
+          <span>{activeRole === "creator" ? "Update Profile" : "Save Profile"}</span>
+        </button>
+        {showProfileSaved && (
+          <span className="text-emerald-400 text-xs font-semibold flex items-center gap-1">
+            <Check className="w-3.5 h-3.5" /> Profile updated successfully
+          </span>
+        )}
+      </div>
+    </form>
+  </div>
+)}  </div>
 
             {/* Social Media Integration Column */}
             <div className="glass-panel p-6 rounded-2xl border border-white/5 h-max relative overflow-hidden flex flex-col gap-5">

@@ -54,7 +54,7 @@ export const Navbar: React.FC = () => {
     setShowAccountMenu(false);
     setShowNotifications(false);
     setShowRoleSelector(false);
-    setActiveTab(activeRole === "creator" ? "profile" : "dashboard");
+    setActiveTab("profile");
     router.push("/");
   };
 
@@ -83,45 +83,12 @@ export const Navbar: React.FC = () => {
 
       {/* Main Actions */}
       <div className="flex items-center gap-4">
-        {/* Role Selector Trigger */}
-        {activeRole !== "landing" && (
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowRoleSelector(!showRoleSelector);
-                setShowNotifications(false);
-                setShowAccountMenu(false);
-              }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all font-medium text-sm text-zinc-300"
-            >
+          {activeRole === "admin" && (
+            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-zinc-300">
               {rolesList.find(r => r.value === activeRole)?.icon}
               <span>{rolesList.find(r => r.value === activeRole)?.label}</span>
-              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showRoleSelector ? "rotate-180" : ""}`} />
-            </button>
-
-            {showRoleSelector && (
-              <div className="absolute right-0 mt-2 w-56 rounded-xl glass-panel shadow-2xl border border-white/10 p-1 flex flex-col gap-1 z-50">
-                <div className="px-3 py-1.5 text-xs font-semibold text-zinc-500 border-b border-white/5 mb-1">
-                  Switch Active Role
-                </div>
-                {rolesList.map(r => (
-                  <button
-                    key={r.value}
-                    onClick={() => handleRoleChange(r.value)}
-                    className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-left font-medium transition-all ${
-                      activeRole === r.value 
-                        ? "bg-purple-600/25 text-purple-200 border border-purple-500/20" 
-                        : "text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent"
-                    }`}
-                  >
-                    {r.icon}
-                    <span>{r.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
 
         {/* Dynamic Wallet Balance */}
         {activeRole !== "landing" && (
@@ -173,13 +140,20 @@ export const Navbar: React.FC = () => {
                   </div>
                 ) : (
                   notifications.map(notif => (
-                    <div 
+                    <button 
                       key={notif.id}
-                      className="p-2.5 rounded-lg bg-white/5 border border-white/5 text-xs text-zinc-300 leading-relaxed hover:bg-white/10 transition-all"
+                      onClick={() => {
+                        if (notif.linkTab) {
+                          setActiveTab(notif.linkTab);
+                          router.push("/");
+                        }
+                        setShowNotifications(false);
+                      }}
+                      className="text-left w-full p-2.5 rounded-lg bg-white/5 border border-white/5 text-xs text-zinc-300 leading-relaxed hover:bg-white/10 transition-all cursor-pointer"
                     >
                       <p>{notif.text}</p>
                       <span className="text-[10px] text-zinc-500 mt-1 block">{notif.date}</span>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>

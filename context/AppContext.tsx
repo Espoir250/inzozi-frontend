@@ -3,15 +3,17 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 
 export type Role = "landing" | "creator" | "business" | "fan" | "admin";
-export type Tab = "dashboard" | "feed" | "campaigns" | "messages" | "wallet" | "admin" | "profile";
+export type Tab = "dashboard" | "feed" | "campaigns" | "messages" | "wallet" | "admin" | "profile" | "search";
 
 export interface AuthUser {
   id: string;
   fullName: string;
-  email: string;
-  phone: string;
+  email?: string;
+  location?: string;
+  avatar?: string;
   role: Exclude<Role, "landing">;
   password: string;
+  phone?: string;
 }
 
 export interface Creator {
@@ -19,7 +21,7 @@ export interface Creator {
   name: string;
   avatar: string;
   niche: string;
-  followers: string;
+  followers: number;
   location: string;
   contact: string;
   engagement: string;
@@ -32,7 +34,8 @@ export interface Creator {
 export interface Business {
   id: string;
   name: string;
-  logo: string;
+  email?: string;
+  contact?: string;
   niche: string;
   location: string;
   verified: boolean;
@@ -85,6 +88,7 @@ interface Notification {
   text: string;
   date: string;
   read: boolean;
+  linkTab?: Tab;
 }
 
 interface AppContextType {
@@ -116,6 +120,7 @@ interface AppContextType {
   registerUser: (payload: Omit<AuthUser, "id">) => { ok: boolean; message: string };
   loginUser: (email: string, password: string) => { ok: boolean; message: string };
   logoutUser: () => void;
+  updateFanProfile: (updates: Partial<AuthUser>) => void;
   updateCreatorProfile: (creatorId: string, updates: Pick<Creator, "name" | "location" | "contact" | "bio" | "niche">) => void;
   deposit: (amount: number, target: "fan" | "business") => void;
   withdraw: (amount: number, target: "creator" | "business" | "fan", method: string, details: string) => void;
@@ -126,6 +131,7 @@ interface AppContextType {
   likePost: (postId: string) => void;
   commentOnPost: (postId: string, text: string) => void;
   launchCampaignProposal: (creatorId: string, title: string, details: string, budget: number) => void;
+  startChat: (partnerId: string, partnerName: string) => void;
   respondToProposal: (proposalId: string, action: "accept" | "decline") => void;
   approveVerification: (id: string) => void;
   rejectVerification: (id: string) => void;
@@ -133,6 +139,7 @@ interface AppContextType {
   removePost: (postId: string) => void;
   dismissFlag: (postId: string) => void;
   clearNotifications: () => void;
+  addNotification: (text: string, linkTab?: Tab) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -143,7 +150,7 @@ const initialCreators: Creator[] = [
     name: "Kirenga Tech",
     avatar: "🎨",
     niche: "Technology & AI",
-    followers: "12.5K",
+    followers: 12500,
     location: "Kigali, Rwanda",
     contact: "kirenga.tech@example.com",
     engagement: "8.4%",
@@ -157,7 +164,7 @@ const initialCreators: Creator[] = [
     name: "Ganza Designs",
     avatar: "👗",
     niche: "Fashion & Art",
-    followers: "45.2K",
+    followers: 45200,
     location: "Nairobi, Kenya",
     contact: "hello@ganzadesigns.example",
     engagement: "6.2%",
@@ -171,7 +178,7 @@ const initialCreators: Creator[] = [
     name: "Inzozi Chef",
     avatar: "🍲",
     niche: "Food & Lifestyle",
-    followers: "8.2K",
+    followers: 8200,
     location: "Kampala, Uganda",
     contact: "bookings@inzozichef.example",
     engagement: "11.1%",
@@ -185,7 +192,7 @@ const initialCreators: Creator[] = [
     name: "Amani Sound",
     avatar: "🎙️",
     niche: "Music & Podcasts",
-    followers: "18.1K",
+    followers: 18100,
     location: "Dar es Salaam, Tanzania",
     contact: "amani.sound@example.com",
     engagement: "7.8%",
@@ -327,6 +334,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   ]);
 
+
   useEffect(() => {
     const readJson = <T,>(key: string): T | null => {
       const saved = localStorage.getItem(key);
@@ -396,6 +404,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (activeRole !== "landing") localStorage.setItem("inzozi_activeRole", activeRole);
   }, [activeRole]);
 
+  const addNotification = (text: string, linkTab?: Tab) => {
+    const newNotif: Notification = {
+      id: "n_" + Date.now(),
+      text,
+      date: "Just now",
+      read: false,
+      linkTab
+    };
+    const updated = [newNotif, ...notifications];
+    setNotifications(updated);
+    localStorage.setItem("inzozi_notifications", JSON.stringify(updated));
+  };
+
   const getRegisteredUsers = (): AuthUser[] => {
     if (typeof window === "undefined") return [];
     const saved = localStorage.getItem("inzozi_users");
@@ -453,17 +474,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveTab("dashboard");
   };
 
+  const updateBusinessProfile = (brandId: string, updates: Pick<Business, "name" | "avatar" | "email" | "contact" | "bio">) => {
+    const updatedBusinesses = businesses.map(b => {
+      if (b.id !== brandId) return b;
+      return {
+        ...b,
+        name: updates.name.trim(),
+        logo: updates.avatar?.trim() ?? b.logo,
+        email: updates.email?.trim(),
+        contact: updates.contact?.trim(),
+        bio: updates.bio?.trim()
+      };
+    });
+    setBusinesses(updatedBusinesses);
+    localStorage.setItem("inzozi_businesses", JSON.stringify(updatedBusinesses));
+    addNotification("Brand profile updated.");
+  };
+
+  const updateFanProfile = (updates: Partial<AuthUser>) => {
+    if (!currentUser) return;
+    const updated = { ...currentUser, ...updates };
+    setCurrentUser(updated);
+    localStorage.setItem("inzozi_currentUser", JSON.stringify(updated));
+    addNotification("Fan profile updated.");
+  };
+
   const updateCreatorProfile = (creatorId: string, updates: Pick<Creator, "name" | "location" | "contact" | "bio" | "niche">) => {
     const updatedCreators = creators.map(creator => {
       if (creator.id !== creatorId) return creator;
 
       return {
         ...creator,
-        name: updates.name.trim(),
-        location: updates.location.trim(),
-        contact: updates.contact.trim(),
-        bio: updates.bio.trim(),
-        niche: updates.niche.trim()
+        name: updates.name?.trim() ?? creator.name,
+        location: updates.location?.trim() ?? creator.location,
+        contact: updates.contact?.trim() ?? creator.contact,
+        bio: updates.bio?.trim() ?? creator.bio,
+        niche: updates.niche?.trim() ?? creator.niche,
       };
     });
 
@@ -477,17 +523,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("inzozi_transactions", JSON.stringify(newTx));
   };
 
-  const addNotification = (text: string) => {
-    const newNotif: Notification = {
-      id: "n_" + Date.now(),
-      text,
-      date: "Just Now",
-      read: false
-    };
-    const updated = [newNotif, ...notifications];
-    setNotifications(updated);
-    localStorage.setItem("inzozi_notifications", JSON.stringify(updated));
-  };
+// Duplicate addNotification removed; original implementation kept above.
+
 
   // Deposit Action
   const deposit = (amount: number, target: "fan" | "business") => {
@@ -823,6 +860,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification(`Sent sponsorship proposal to ${creatorName}. $${budget.toFixed(2)} held in escrow.`);
   };
 
+  // Start a direct message thread with a user
+  const startChat = (partnerId: string, partnerName: string) => {
+    if (!currentUser) return;
+    
+    // Check if a direct message chat already exists
+    const existing = proposals.find(p => 
+      p.title === "Direct Message" && 
+      ((p.creatorId === partnerId && p.businessId === currentUser.id) || 
+       (p.businessId === partnerId && p.creatorId === currentUser.id))
+    );
+    
+    if (existing) {
+      return; // Chat already exists
+    }
+
+    const newChat: Proposal = {
+      id: "chat_" + Date.now(),
+      businessId: currentUser.id,
+      businessName: currentUser.fullName || currentUser.id,
+      creatorId: partnerId,
+      creatorName: partnerName,
+      title: "Direct Message",
+      details: "Direct conversation",
+      budget: 0,
+      status: "accepted", // Auto-accept DMs so they can just chat
+      contractCreated: false,
+      messages: []
+    };
+
+    const updatedProposals = [newChat, ...proposals];
+    setProposals(updatedProposals);
+    localStorage.setItem("inzozi_proposals", JSON.stringify(updatedProposals));
+  };
+
   // Creator responds to proposal (accept or decline)
   const respondToProposal = (proposalId: string, action: "accept" | "decline") => {
     const timestamp = new Date().toISOString().split("T")[0];
@@ -907,7 +978,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           name: verifiedItem.name,
           avatar: "🎧",
           niche: verifiedItem.niche,
-          followers: "5.4K",
+          followers: 5400,
           location: "Kigali, Rwanda",
           contact: "bookings@example.com",
           engagement: "9.2%",
@@ -954,6 +1025,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addNotification(`Rejected profile verification request for "${rejectedItem.name}".`);
     }
   };
+
+  // Helper: parse follower count to a number value for sorting/filtering
+  const getFollowersValue = (num: number) => num;
 
   // Flag post action
   const flagPost = (postId: string, reason: string) => {
@@ -1016,7 +1090,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         proposals,
         notifications,
         pendingVerifications,
-        registerUser,
+        updateFanProfile,
         loginUser,
         logoutUser,
         updateCreatorProfile,
@@ -1029,13 +1103,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         likePost,
         commentOnPost,
         launchCampaignProposal,
+        startChat,
         respondToProposal,
         approveVerification,
         rejectVerification,
         flagPost,
         removePost,
         dismissFlag,
-        clearNotifications
+        clearNotifications,
+        addNotification
       }}
     >
       {children}

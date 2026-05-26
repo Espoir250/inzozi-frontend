@@ -32,6 +32,13 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isClicked, setIsClicked] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'email' | 'verify'>('email');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
   useEffect(() => {
     if (isAuthenticated) router.push("/");
   }, [isAuthenticated, router]);
@@ -109,7 +116,131 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
             </Link>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Login form or Forgot password flow */}
+          {showForgot ? (
+            forgotStep === 'email' ? (
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                // Placeholder: send reset code logic
+                setResetMessage('If an account exists, a reset code has been sent to your email.');
+                setForgotStep('verify');
+              }} className="space-y-5">
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-neutral-500">Email address</span>
+                  <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                    <Mail className="w-4 h-4 text-neutral-500" />
+                    <input
+                      required
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className="w-full outline-none text-sm"
+                      placeholder="you@example.com"
+                    />
+                  </span>
+                </label>
+
+                <button type="submit" className="w-full bg-black text-white py-3 rounded-xl font-bold hover:bg-neutral-800">
+                  Send reset code
+                </button>
+
+                {resetMessage && (
+                  <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium">
+                    {resetMessage}
+                  </div>
+                )}
+
+                <button type="button" onClick={() => setShowForgot(false)} className="w-full mt-2 text-sm text-blue-600 hover:underline">
+                  Back to login
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                // Placeholder: verify code and reset password logic
+                if (newPassword.length < 6) {
+                  setResetMessage('Password must be at least 6 characters.');
+                  return;
+                }
+                if (newPassword !== confirmNewPassword) {
+                  setResetMessage('Passwords do not match.');
+                  return;
+                }
+                // Simulate successful password reset
+                setResetMessage('Password successfully reset. Redirecting to login...');
+                // Reset flow and return to login after a brief timeout
+                setTimeout(() => {
+                  setShowForgot(false);
+                  setForgotStep('email');
+                  setForgotEmail('');
+                  setResetCode('');
+                  setNewPassword('');
+                  setConfirmNewPassword('');
+                  setResetMessage('');
+                }, 1500);
+              }} className="space-y-5">
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-neutral-500">Verification code</span>
+                  <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                    <Lock className="w-4 h-4 text-neutral-500" />
+                    <input
+                      required
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value)}
+                      className="w-full outline-none text-sm"
+                      placeholder="Enter code"
+                    />
+                  </span>
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-neutral-500">New password</span>
+                  <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                    <Lock className="w-4 h-4 text-neutral-500" />
+                    <input
+                      required
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full outline-none text-sm"
+                      placeholder="New password"
+                    />
+                  </span>
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-neutral-500">Confirm new password</span>
+                  <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                    <Lock className="w-4 h-4 text-neutral-500" />
+                    <input
+                      required
+                      type="password"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      className="w-full outline-none text-sm"
+                      placeholder="Confirm new password"
+                    />
+                  </span>
+                </label>
+
+                <button type="submit" className="w-full bg-black text-white py-3 rounded-xl font-bold hover:bg-neutral-800">
+                  Reset password
+                </button>
+
+                {resetMessage && (
+                  <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium">
+                    {resetMessage}
+                  </div>
+                )}
+
+                <button type="button" onClick={() => setShowForgot(false)} className="w-full mt-2 text-sm text-blue-600 hover:underline">
+                  Back to login
+                </button>
+              </form>
+            )
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5">
+
             {isRegister && (
               <>
                 <label className="block">
@@ -193,6 +324,11 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
                 />
               </span>
             </label>
+            { !isRegister && (
+              <div className="text-right mt-2">
+                <button type="button" onClick={() => setShowForgot(true)} className="text-sm text-blue-600 hover:underline">Forgot password?</button>
+              </div>
+            ) }
 
             {isRegister && (
               <label className="block">
@@ -227,8 +363,9 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
+          )}
         </section>
       </div>
-      </section>
+    </section>
   );
 };

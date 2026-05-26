@@ -35,6 +35,7 @@ export const BusinessDashboard: React.FC = () => {
   const [campaignDetails, setCampaignDetails] = useState("");
   const [campaignBudget, setCampaignBudget] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [campaignDate, setCampaignDate] = useState('');
   const nicheOptions = Array.from(new Set(creators.map(creator => creator.niche).filter(Boolean))).sort();
 
   const handleOpenCollab = (creator: Creator) => {
@@ -67,12 +68,7 @@ export const BusinessDashboard: React.FC = () => {
   };
 
   // Helper: parse follower count to a number value for sorting/filtering
-  const getFollowersValue = (folStr: string) => {
-    const cleanVal = parseFloat(folStr.replace(/[^\d.]/g, ""));
-    if (folStr.toUpperCase().includes("M")) return cleanVal * 1000000;
-    if (folStr.toUpperCase().includes("K")) return cleanVal * 1000;
-    return cleanVal;
-  };
+  const getFollowersValue = (followers: number) => followers;
 
   // Filter creators list
   const filteredCreators = creators.filter(c => {
@@ -289,13 +285,20 @@ export const BusinessDashboard: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">Sponsorship Deliverables / Details</label>
+                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">Campaign Deliverables / Details</label>
                 <textarea
                   required
                   rows={3}
                   placeholder="Describe details: e.g. One YouTube review integration and 2 Twitter mentions tagging @Brand..."
                   value={campaignDetails}
                   onChange={(e) => setCampaignDetails(e.target.value)}
+                  className="w-full px-4 py-2 rounded-xl glass-input text-xs"
+                />
+                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase mt-3">Campaign Date</label>
+                <input
+                  type="date"
+                  value={campaignDate}
+                  onChange={(e) => setCampaignDate(e.target.value)}
                   className="w-full px-4 py-2 rounded-xl glass-input text-xs"
                 />
               </div>

@@ -10,14 +10,18 @@ import {
   Award, 
   Briefcase, 
   Users, 
-  ShieldAlert, 
+  Search, 
   CheckSquare,
   Heart,
   Settings
 } from "lucide-react";
 
+import { usePathname, useRouter } from "next/navigation";
+
 export const Sidebar: React.FC = () => {
   const { activeRole, activeTab, setActiveTab } = useApp();
+  const router = useRouter();
+  const pathname = usePathname();
 
   interface NavItem {
     id: Tab;
@@ -104,8 +108,15 @@ export const Sidebar: React.FC = () => {
     }
   };
 
+  const handleTabClick = (id: Tab) => {
+    setActiveTab(id);
+    if (pathname !== "/") {
+      router.push("/");
+    }
+  };
+
   return (
-    <aside className="w-64 glass-panel border-r border-white/5 flex flex-col py-8 px-4 h-[calc(100vh-73px)] sticky top-[73px] shrink-0 hidden md:flex">
+    <aside className="w-64 glass-panel border-r border-white/5 flex flex-col py-8 px-4 h-[calc(100vh-73px)] sticky top-[73px] shrink-0 hidden md:flex z-40">
       <div className="flex flex-col gap-1.5">
         {navItems.map(item => {
           // Edge case check for Admin tabs
@@ -116,7 +127,7 @@ export const Sidebar: React.FC = () => {
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => handleTabClick(item.id)}
               className={`flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium transition-all ${
                 finalActive 
                   ? "bg-gradient-brand text-white shadow-lg shadow-purple-500/10" 
