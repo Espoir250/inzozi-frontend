@@ -7,7 +7,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { useRouter } from "next/navigation";
 import type { Post } from "@/context/AppContext";
 
-export default function CreatorPage({ params }: { params: { id: string } }) {
+export default function CreatorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { creators, posts, activeRole, isAuthenticated, setActiveTab, commentOnPost, likePost, startChat } = useApp();
   const router = useRouter();

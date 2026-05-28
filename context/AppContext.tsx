@@ -1,6 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { loginWithApi, logoutWithApi, registerWithApi } from "@/lib/authApi";
+import { BackendContent, createContentWithApi, fetchContentList } from "@/lib/contentApi";
 
 export type Role = "landing" | "creator" | "business" | "fan" | "admin";
 export type Tab = "dashboard" | "feed" | "campaigns" | "messages" | "wallet" | "admin" | "profile" | "search";
@@ -12,9 +14,21 @@ export interface AuthUser {
   location?: string;
   avatar?: string;
   role: Exclude<Role, "landing">;
-  password: string;
+  password?: string;
   phone?: string;
 }
+
+type RegisterUserPayload = {
+  fullName: string;
+  email: string;
+  phone: string;
+  role: Exclude<Role, "landing">;
+  password: string;
+};
+
+type CreatorProfileUpdate = Pick<Creator, "name" | "avatar" | "location" | "contact" | "bio"> & {
+  niche?: string;
+};
 
 export interface Creator {
   id: string;
@@ -34,6 +48,7 @@ export interface Creator {
 export interface Business {
   id: string;
   name: string;
+  logo?: string;
   email?: string;
   contact?: string;
   niche: string;
@@ -117,17 +132,18 @@ interface AppContextType {
   pendingVerifications: { id: string; name: string; type: "creator" | "business"; niche: string; bio: string }[];
   
   // Methods
-  registerUser: (payload: Omit<AuthUser, "id">) => { ok: boolean; message: string };
-  loginUser: (email: string, password: string) => { ok: boolean; message: string };
-  logoutUser: () => void;
+  registerUser: (payload: RegisterUserPayload) => Promise<{ ok: boolean; message: string }>;
+  loginUser: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
+  logoutUser: () => Promise<void>;
   updateFanProfile: (updates: Partial<AuthUser>) => void;
-  updateCreatorProfile: (creatorId: string, updates: Pick<Creator, "name" | "location" | "contact" | "bio" | "niche">) => void;
+  updateBusinessProfile: (brandId: string, updates: { name: string; avatar?: string; email?: string; contact?: string; bio: string }) => void;
+  updateCreatorProfile: (creatorId: string, updates: CreatorProfileUpdate) => void;
   deposit: (amount: number, target: "fan" | "business") => void;
   withdraw: (amount: number, target: "creator" | "business" | "fan", method: string, details: string) => void;
   tipCreator: (creatorId: string, amount: number) => boolean;
   subscribeToCreator: (creatorId: string) => boolean;
   unlockPremiumPost: (postId: string) => boolean;
-  createPost: (title: string, content: string, type: "text" | "image" | "video", visibility: "public" | "subscriber" | "premium", price?: number, mediaUrl?: string) => void;
+  createPost: (title: string, content: string, type: "text" | "image" | "video", visibility: "public" | "subscriber" | "premium", price?: number, mediaUrl?: string, mediaFile?: File) => Promise<{ ok: boolean; message: string }>;
   likePost: (postId: string) => void;
   commentOnPost: (postId: string, text: string) => void;
   launchCampaignProposal: (creatorId: string, title: string, details: string, budget: number) => void;
@@ -419,54 +435,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const getRegisteredUsers = (): AuthUser[] => {
     if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("inzozi_users");
-    return saved ? JSON.parse(saved) : [];
+    const savedProfiles = localStorage.getItem("inzozi_user_profiles");
+
+    try {
+      return savedProfiles ? JSON.parse(savedProfiles) : [];
+    } catch {
+      return [];
+    }
   };
 
-  const registerUser = (payload: Omit<AuthUser, "id">) => {
+  const saveUserProfile = (user: AuthUser) => {
     const users = getRegisteredUsers();
-    const normalizedEmail = payload.email.trim().toLowerCase();
+    const normalizedEmail = user.email?.trim().toLowerCase();
+    const updatedUsers = [
+      user,
+      ...users.filter(item => item.email?.toLowerCase() !== normalizedEmail)
+    ];
 
-    if (users.some(user => user.email.toLowerCase() === normalizedEmail)) {
-      return { ok: false, message: "An account with this email already exists." };
-    }
-
-    const newUser: AuthUser = {
-      ...payload,
-      id: "user_" + Date.now(),
-      email: normalizedEmail,
-      fullName: payload.fullName.trim(),
-      phone: payload.phone.trim()
-    };
-
-    localStorage.setItem("inzozi_users", JSON.stringify([newUser, ...users]));
-    localStorage.setItem("inzozi_currentUser", JSON.stringify(newUser));
-    localStorage.setItem("inzozi_activeRole", newUser.role);
-    setCurrentUser(newUser);
-    setActiveRole(newUser.role);
-    setActiveTab(newUser.role === "fan" || newUser.role === "creator" ? "feed" : "dashboard");
-    return { ok: true, message: "Account created successfully." };
+    localStorage.setItem("inzozi_user_profiles", JSON.stringify(updatedUsers));
   };
 
-  const loginUser = (email: string, password: string) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = getRegisteredUsers().find(
-      item => item.email.toLowerCase() === normalizedEmail && item.password === password
-    );
-
-    if (!user) {
-      return { ok: false, message: "Invalid email or password." };
-    }
-
+  const saveAuthenticatedUser = (user: AuthUser, accessToken: string, refreshToken: string) => {
+    localStorage.setItem("inzozi_accessToken", accessToken);
+    localStorage.setItem("inzozi_refreshToken", refreshToken);
     localStorage.setItem("inzozi_currentUser", JSON.stringify(user));
     localStorage.setItem("inzozi_activeRole", user.role);
     setCurrentUser(user);
     setActiveRole(user.role);
     setActiveTab(user.role === "fan" || user.role === "creator" ? "feed" : "dashboard");
-    return { ok: true, message: "Welcome back." };
   };
 
-  const logoutUser = () => {
+  const registerUser = async (payload: RegisterUserPayload) => {
+    const normalizedEmail = payload.email.trim().toLowerCase();
+
+    try {
+      const result = await registerWithApi({
+        email: normalizedEmail,
+        phone: payload.phone,
+        password: payload.password,
+        role: payload.role,
+      });
+
+      saveUserProfile({
+        id: "pending_" + Date.now(),
+        email: normalizedEmail,
+        fullName: payload.fullName.trim(),
+        phone: payload.phone.trim(),
+        role: payload.role,
+      });
+
+      return {
+        ok: true,
+        message: `${result.message} Please log in to continue.`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Could not create account. Please try again.",
+      };
+    }
+  };
+
+  const loginUser = async (email: string, password: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    try {
+      const result = await loginWithApi(normalizedEmail, password);
+      const savedProfile = getRegisteredUsers().find(
+        item => item.email?.toLowerCase() === normalizedEmail
+      );
+
+      if (!result.accessToken || !result.refreshToken) {
+        return { ok: false, message: "Login succeeded, but the API did not return tokens." };
+      }
+
+      const user: AuthUser = {
+        id: result.userId ?? savedProfile?.id ?? "user_" + Date.now(),
+        fullName: savedProfile?.fullName ?? normalizedEmail,
+        email: normalizedEmail,
+        phone: savedProfile?.phone,
+        avatar: savedProfile?.avatar,
+        location: savedProfile?.location,
+        role: result.role ?? savedProfile?.role ?? "fan",
+      };
+
+      saveUserProfile(user);
+      saveAuthenticatedUser(user, result.accessToken, result.refreshToken);
+      return { ok: true, message: result.message };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Invalid email or password.",
+      };
+    }
+  };
+
+  const logoutUser = async () => {
+    const refreshToken = localStorage.getItem("inzozi_refreshToken");
+    await logoutWithApi(refreshToken);
+    localStorage.removeItem("inzozi_accessToken");
+    localStorage.removeItem("inzozi_refreshToken");
     localStorage.removeItem("inzozi_currentUser");
     localStorage.removeItem("inzozi_activeRole");
     setCurrentUser(null);
@@ -474,7 +542,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveTab("dashboard");
   };
 
-  const updateBusinessProfile = (brandId: string, updates: Pick<Business, "name" | "avatar" | "email" | "contact" | "bio">) => {
+  const updateBusinessProfile = (brandId: string, updates: { name: string; avatar?: string; email?: string; contact?: string; bio: string }) => {
     const updatedBusinesses = businesses.map(b => {
       if (b.id !== brandId) return b;
       return {
@@ -499,13 +567,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification("Fan profile updated.");
   };
 
-  const updateCreatorProfile = (creatorId: string, updates: Pick<Creator, "name" | "location" | "contact" | "bio" | "niche">) => {
+  const updateCreatorProfile = (creatorId: string, updates: CreatorProfileUpdate) => {
     const updatedCreators = creators.map(creator => {
       if (creator.id !== creatorId) return creator;
 
       return {
         ...creator,
         name: updates.name?.trim() ?? creator.name,
+        avatar: updates.avatar?.trim() ?? creator.avatar,
         location: updates.location?.trim() ?? creator.location,
         contact: updates.contact?.trim() ?? creator.contact,
         bio: updates.bio?.trim() ?? creator.bio,
@@ -1091,8 +1160,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications,
         pendingVerifications,
         updateFanProfile,
+        registerUser,
         loginUser,
         logoutUser,
+        updateBusinessProfile,
         updateCreatorProfile,
         deposit,
         withdraw,

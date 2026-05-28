@@ -13,7 +13,8 @@ import {
   Search, 
   CheckSquare,
   Heart,
-  Settings
+  Settings,
+  ShieldAlert
 } from "lucide-react";
 
 import { usePathname, useRouter } from "next/navigation";

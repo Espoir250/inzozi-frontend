@@ -10,9 +10,9 @@ export const FanProfile: React.FC = () => {
 
   const fan = currentUser as AuthUser | undefined;
 
-  const [profileName, setProfileName] = useState(fan?.name || "");
+  const [profileName, setProfileName] = useState(fan?.fullName || "");
   const [profileAvatar, setProfileAvatar] = useState<string>(fan?.avatar || "");
-  const [profileContact, setProfileContact] = useState(fan?.contact || "");
+  const [profileContact, setProfileContact] = useState(fan?.phone || "");
 
   const [showSaved, setShowSaved] = useState(false);
 
@@ -29,9 +29,9 @@ export const FanProfile: React.FC = () => {
     e.preventDefault();
     if (!currentUser) return;
     updateFanProfile({
-      name: profileName,
+      fullName: profileName,
       avatar: profileAvatar,
-      contact: profileContact
+      phone: profileContact
     });
     setShowSaved(true);
     setTimeout(() => setShowSaved(false), 2000);

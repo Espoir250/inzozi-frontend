@@ -22,9 +22,10 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
   const { loginUser, registerUser, isAuthenticated } = useApp();
   const requestedRole = mode === "register" ? searchParams.get("role") as AccountRole | null : null;
   const defaultRole = requestedRole && accountRoles.some(item => item.value === requestedRole) ? requestedRole : "fan";
+  const emailFromQuery = mode === "login" ? searchParams.get("email") ?? "" : "";
 
   const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(emailFromQuery);
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState<AccountRole>(defaultRole);
   const [password, setPassword] = useState("");
@@ -43,14 +44,14 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
     if (isAuthenticated) router.push("/");
   }, [isAuthenticated, router]);
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setMessage("");
     setIsSubmitting(true);
 
     if (mode === "register") {
-      if (password.length < 6) {
-        setMessage("Password must be at least 6 characters.");
+      if (password.length < 8) {
+        setMessage("Password must be at least 8 characters.");
         setIsSubmitting(false);
         return;
       }
@@ -61,14 +62,14 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
         return;
       }
 
-      const result = registerUser({ fullName, email, phone, role, password });
+      const result = await registerUser({ fullName, email, phone, role, password });
       setMessage(result.message);
-      if (result.ok) router.push("/");
+      if (result.ok) router.push(`/login?email=${encodeURIComponent(email.trim().toLowerCase())}`);
       setIsSubmitting(false);
       return;
     }
 
-    const result = loginUser(email, password);
+    const result = await loginUser(email, password);
     setMessage(result.message);
     if (result.ok) router.push("/");
     setIsSubmitting(false);
@@ -90,13 +91,13 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
             </h1>
             <p className="text-neutral-300 text-sm leading-6 mt-5 max-w-sm">
               {isRegister
-                ? "Register as a creator, business, fan, or admin and enter the correct dashboard immediately."
+                ? "Register as a creator, business, fan, or admin, then log in to enter the correct dashboard."
                 : "Sign in with the email and password you used during registration."}
             </p>
           </div>
 
           <p className="text-xs text-neutral-500">
-            Frontend demo authentication is stored in this browser until a backend API is connected.
+            Authentication is connected to the Inzozi Market API.
           </p>
         </section>
 
@@ -121,9 +122,7 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
             forgotStep === 'email' ? (
               <form onSubmit={(e) => {
                 e.preventDefault();
-                // Placeholder: send reset code logic
-                setResetMessage('If an account exists, a reset code has been sent to your email.');
-                setForgotStep('verify');
+                setResetMessage('Password reset is not connected to the backend yet.');
               }} className="space-y-5">
                 <label className="block">
                   <span className="text-xs font-bold uppercase text-neutral-500">Email address</span>
@@ -320,7 +319,8 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   className="w-full outline-none text-sm"
-                  placeholder="Minimum 6 characters"
+                  placeholder={isRegister ? "Minimum 8 characters" : "Your password"}
+                  minLength={isRegister ? 8 : undefined}
                 />
               </span>
             </label>
