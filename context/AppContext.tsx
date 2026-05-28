@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { loginWithApi, logoutWithApi, registerWithApi } from "@/lib/authApi";
+import { loginWithApi, logoutWithApi, registerWithApi, verifyRegistrationWithApi } from "@/lib/authApi";
 import { BackendContent, createContentWithApi, fetchContentList } from "@/lib/contentApi";
 
 export type Role = "landing" | "creator" | "business" | "fan" | "admin";
@@ -132,7 +132,8 @@ interface AppContextType {
   pendingVerifications: { id: string; name: string; type: "creator" | "business"; niche: string; bio: string }[];
   
   // Methods
-  registerUser: (payload: RegisterUserPayload) => Promise<{ ok: boolean; message: string }>;
+  registerUser: (payload: RegisterUserPayload) => Promise<{ ok: boolean; message: string; userId?: string }>;
+  verifyRegistration: (userId: string, otp: string) => Promise<{ ok: boolean; message: string }>;
   loginUser: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
   logoutUser: () => Promise<void>;
   updateFanProfile: (updates: Partial<AuthUser>) => void;
@@ -470,6 +471,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const result = await registerWithApi({
+        fullName: payload.fullName,
         email: normalizedEmail,
         phone: payload.phone,
         password: payload.password,
@@ -486,12 +488,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return {
         ok: true,
-        message: `${result.message} Please log in to continue.`,
+        message: `${result.message} Enter the code sent to your email to continue.`,
+        userId: result.userId,
       };
     } catch (error) {
       return {
         ok: false,
         message: error instanceof Error ? error.message : "Could not create account. Please try again.",
+      };
+    }
+  };
+
+  const verifyRegistration = async (userId: string, otp: string) => {
+    try {
+      const result = await verifyRegistrationWithApi({ userId, otp });
+      return {
+        ok: true,
+        message: `${result.message} You can now log in.`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Could not verify account. Please try again.",
       };
     }
   };
@@ -825,7 +843,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Creator Upload Content
-  const createPost = (
+  const createPost = async (
     title: string,
     content: string,
     type: "text" | "image" | "video",
@@ -853,6 +871,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPosts(updated);
     localStorage.setItem("inzozi_posts", JSON.stringify(updated));
     addNotification(`Successfully published new ${visibility} post: "${title}"`);
+    return { ok: true, message: "Post created successfully." };
   };
 
   // Engage with Posts
@@ -1161,6 +1180,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pendingVerifications,
         updateFanProfile,
         registerUser,
+        verifyRegistration,
         loginUser,
         logoutUser,
         updateBusinessProfile,

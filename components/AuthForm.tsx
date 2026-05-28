@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useState } from "react";
-import { ArrowRight, Briefcase, Heart, Lock, Mail, Phone, Shield, Sparkles, User } from "lucide-react";
+import { ArrowRight, Briefcase, CheckCircle2, Heart, Lock, Mail, Phone, Shield, Sparkles, User, X } from "lucide-react";
 import { Role, useApp } from "@/context/AppContext";
 
 type AccountRole = Exclude<Role, "landing">;
@@ -19,7 +19,7 @@ const accountRoles: { value: AccountRole; label: string; description: string; ic
 export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { loginUser, registerUser, isAuthenticated } = useApp();
+  const { loginUser, registerUser, verifyRegistration, isAuthenticated } = useApp();
   const requestedRole = mode === "register" ? searchParams.get("role") as AccountRole | null : null;
   const defaultRole = requestedRole && accountRoles.some(item => item.value === requestedRole) ? requestedRole : "fan";
   const emailFromQuery = mode === "login" ? searchParams.get("email") ?? "" : "";
@@ -40,6 +40,10 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [resetMessage, setResetMessage] = useState('');
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationMessage, setVerificationMessage] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
   useEffect(() => {
     if (isAuthenticated) router.push("/");
   }, [isAuthenticated, router]);
@@ -64,7 +68,11 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
 
       const result = await registerUser({ fullName, email, phone, role, password });
       setMessage(result.message);
-      if (result.ok) router.push(`/login?email=${encodeURIComponent(email.trim().toLowerCase())}`);
+      if (result.ok && result.userId) {
+        setPendingUserId(result.userId);
+        setVerificationCode("");
+        setVerificationMessage("");
+      }
       setIsSubmitting(false);
       return;
     }
@@ -73,6 +81,28 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
     setMessage(result.message);
     if (result.ok) router.push("/");
     setIsSubmitting(false);
+  };
+
+  const handleVerifyRegistration = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!pendingUserId) return;
+
+    if (verificationCode.trim().length !== 6) {
+      setVerificationMessage("Enter the 6-digit code from your email.");
+      return;
+    }
+
+    setIsVerifying(true);
+    setVerificationMessage("");
+    const result = await verifyRegistration(pendingUserId, verificationCode);
+    setVerificationMessage(result.message);
+    setIsVerifying(false);
+
+    if (result.ok) {
+      window.setTimeout(() => {
+        router.push(`/login?email=${encodeURIComponent(email.trim().toLowerCase())}`);
+      }, 900);
+    }
   };
 
   const isRegister = mode === "register";
@@ -366,6 +396,67 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
           )}
         </section>
       </div>
+
+      {pendingUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-green-50 text-green-700">
+                  <CheckCircle2 className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-lg font-black">Verify your email</h3>
+                  <p className="mt-1 text-sm text-neutral-600">
+                    Enter the code sent to {email.trim().toLowerCase()}.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingUserId(null)}
+                className="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-black"
+                aria-label="Close verification form"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleVerifyRegistration} className="mt-6 space-y-4">
+              <label className="block">
+                <span className="text-xs font-bold uppercase text-neutral-500">Verification code</span>
+                <span className="mt-1.5 flex items-center gap-2 rounded-xl border border-neutral-300 px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                  <Lock className="h-4 w-4 text-neutral-500" />
+                  <input
+                    required
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={verificationCode}
+                    onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, ""))}
+                    className="w-full outline-none text-sm"
+                    placeholder="123456"
+                  />
+                </span>
+              </label>
+
+              {verificationMessage && (
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium">
+                  {verificationMessage}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isVerifying}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-black py-3 font-bold text-white hover:bg-neutral-800 disabled:opacity-60"
+              >
+                <span>{isVerifying ? "Verifying..." : "Verify and continue"}</span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

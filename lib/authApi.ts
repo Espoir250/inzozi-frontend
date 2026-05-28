@@ -7,6 +7,10 @@ export type AuthResult = {
   message: string;
 };
 
+export type RegisterResult = AuthResult & {
+  userId?: string;
+};
+
 export type LoginResult = AuthResult & {
   accessToken?: string;
   refreshToken?: string;
@@ -15,10 +19,16 @@ export type LoginResult = AuthResult & {
 };
 
 export type RegisterPayload = {
+  fullName?: string;
   email: string;
   phone?: string;
   password: string;
   role: Exclude<Role, "landing">;
+};
+
+export type VerifyRegistrationPayload = {
+  userId: string;
+  otp: string;
 };
 
 type ApiErrorBody = {
@@ -26,7 +36,7 @@ type ApiErrorBody = {
   message?: string;
 };
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000/api/v1").replace(/\/$/, "");
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1").replace(/\/$/, "");
 
 const frontendToBackendRole = (role: Exclude<Role, "landing">): BackendRole => {
   if (role === "fan") return "CONSUMER";
@@ -69,10 +79,11 @@ const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
   return body as T;
 };
 
-export const registerWithApi = async (payload: RegisterPayload): Promise<AuthResult> => {
-  const body = await requestJson<{ message?: string }>("/auth/register", {
+export const registerWithApi = async (payload: RegisterPayload): Promise<RegisterResult> => {
+  const body = await requestJson<{ message?: string; userId?: string }>("/auth/register", {
     method: "POST",
     body: JSON.stringify({
+      name: payload.fullName?.trim() || undefined,
       email: payload.email.trim().toLowerCase(),
       phone: payload.phone?.trim() || undefined,
       password: payload.password,
@@ -83,6 +94,22 @@ export const registerWithApi = async (payload: RegisterPayload): Promise<AuthRes
   return {
     ok: true,
     message: body.message ?? "Account created successfully.",
+    userId: body.userId,
+  };
+};
+
+export const verifyRegistrationWithApi = async (payload: VerifyRegistrationPayload): Promise<AuthResult> => {
+  const body = await requestJson<{ message?: string }>("/auth/verify", {
+    method: "POST",
+    body: JSON.stringify({
+      userId: payload.userId,
+      otp: payload.otp.trim(),
+    }),
+  });
+
+  return {
+    ok: true,
+    message: body.message ?? "Account verified successfully.",
   };
 };
 
