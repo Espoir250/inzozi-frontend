@@ -19,6 +19,33 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+const isImageAvatar = (avatar?: string) => {
+  if (!avatar) return false;
+  return avatar.startsWith("http://") ||
+    avatar.startsWith("https://") ||
+    avatar.startsWith("data:image/") ||
+    avatar.startsWith("/");
+};
+
+const ProfileAvatar = ({
+  avatar,
+  name,
+  className = "w-10 h-10 rounded-xl text-xl",
+}: {
+  avatar?: string;
+  name: string;
+  className?: string;
+}) => (
+  <div className={`${className} bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shrink-0`}>
+    {isImageAvatar(avatar) ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={avatar} alt={`${name} profile picture`} className="h-full w-full object-cover" />
+    ) : (
+      <span>{avatar || name.charAt(0).toUpperCase()}</span>
+    )}
+  </div>
+);
+
 export const ViewerFeed: React.FC = () => {
   const { 
     posts, 
@@ -170,9 +197,7 @@ export const ViewerFeed: React.FC = () => {
                     {/* Header */}
                     <div className="p-4 flex items-center justify-between border-b border-white/5">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl">
-                          {post.creatorAvatar}
-                        </div>
+                        <ProfileAvatar avatar={creatorObj?.avatar ?? post.creatorAvatar} name={post.creatorName} />
                         <div>
                           <div className="flex items-center gap-1">
                                                 <Link href={`/creator/${creatorObj?.id}`} className="font-bold text-sm text-zinc-200 hover:underline">{post.creatorName}</Link>
@@ -343,7 +368,7 @@ export const ViewerFeed: React.FC = () => {
               ) : filteredCreators.map(creator => (
                 <div key={creator.id} className="flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-xl shrink-0">{creator.avatar}</span>
+                    <ProfileAvatar avatar={creator.avatar} name={creator.name} className="w-9 h-9 rounded-xl text-xl" />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1">
                         <button className="flex items-center gap-1 font-bold text-xs text-white truncate hover:underline" onClick={() => setSelectedCreator(creator)}>
@@ -504,9 +529,7 @@ export const ViewerFeed: React.FC = () => {
               <X className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-2xl">
-                {selectedCreator.avatar}
-              </div>
+              <ProfileAvatar avatar={selectedCreator.avatar} name={selectedCreator.name} className="w-12 h-12 rounded-xl text-2xl" />
               <div>
                 <h3 className="text-lg font-bold text-white flex items-center gap-1">
                   {selectedCreator.name}

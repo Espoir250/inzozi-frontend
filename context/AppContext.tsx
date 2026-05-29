@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { loginWithApi, logoutWithApi, registerWithApi, verifyRegistrationWithApi } from "@/lib/authApi";
-import { BackendContent, createContentWithApi, fetchContentList } from "@/lib/contentApi";
+import { BackendContent, createContentWithApi } from "@/lib/contentApi";
+import { uploadProfileImageWithApi } from "@/lib/userApi";
 
 export type Role = "landing" | "creator" | "business" | "fan" | "admin";
 export type Tab = "dashboard" | "feed" | "campaigns" | "messages" | "wallet" | "admin" | "profile" | "search";
@@ -28,6 +29,7 @@ type RegisterUserPayload = {
 
 type CreatorProfileUpdate = Pick<Creator, "name" | "avatar" | "location" | "contact" | "bio"> & {
   niche?: string;
+  avatarFile?: File;
 };
 
 export interface Creator {
@@ -136,9 +138,9 @@ interface AppContextType {
   verifyRegistration: (userId: string, otp: string) => Promise<{ ok: boolean; message: string }>;
   loginUser: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
   logoutUser: () => Promise<void>;
-  updateFanProfile: (updates: Partial<AuthUser>) => void;
+  updateFanProfile: (updates: Partial<AuthUser> & { avatarFile?: File }) => Promise<{ ok: boolean; message: string }>;
   updateBusinessProfile: (brandId: string, updates: { name: string; avatar?: string; email?: string; contact?: string; bio: string }) => void;
-  updateCreatorProfile: (creatorId: string, updates: CreatorProfileUpdate) => void;
+  updateCreatorProfile: (creatorId: string, updates: CreatorProfileUpdate) => Promise<{ ok: boolean; message: string }>;
   deposit: (amount: number, target: "fan" | "business") => void;
   withdraw: (amount: number, target: "creator" | "business" | "fan", method: string, details: string) => void;
   tipCreator: (creatorId: string, amount: number) => boolean;
@@ -315,6 +317,27 @@ const initialTransactions: WalletTransaction[] = [
   { id: "tx1", type: "deposit", amount: 50.00, description: "Wallet Initialized (Fan)", date: "2026-05-19" },
   { id: "tx2", type: "unlock_earned", amount: 120.00, description: "Post unlock earnings (Creator)", date: "2026-05-20" }
 ];
+
+const backendContentToPost = (content: BackendContent, creator?: Creator): Post => {
+  const postType = content.type === "article" ? "text" : content.type === "audio" ? "video" : content.type;
+  const visibility = content.visibility === "public" ? "public" : "premium";
+
+  return {
+    id: content.id,
+    creatorId: creator?.id ?? content.creatorId,
+    creatorName: creator?.name ?? "Creator",
+    creatorAvatar: creator?.avatar ?? "",
+    title: content.title,
+    content: content.description ?? "",
+    type: postType,
+    mediaUrl: content.contentUrl,
+    visibility,
+    price: content.price ?? undefined,
+    likes: 0,
+    comments: [],
+    unlockedBy: [],
+  };
+};
 
 const initialNotifications: Notification[] = [
   { id: "n1", text: "Welcome to InzoziMarket! Complete your profile to get started.", date: "Today", read: false }
@@ -577,22 +600,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification("Brand profile updated.");
   };
 
-  const updateFanProfile = (updates: Partial<AuthUser>) => {
-    if (!currentUser) return;
-    const updated = { ...currentUser, ...updates };
+  const updateFanProfile = async (updates: Partial<AuthUser> & { avatarFile?: File }) => {
+    if (!currentUser) {
+      return { ok: false, message: "Please log in before updating your profile." };
+    }
+
+    let avatar = updates.avatar;
+    if (updates.avatarFile) {
+      const uploaded = await uploadProfileImageWithApi(updates.avatarFile);
+      avatar = uploaded.profileImage;
+    }
+
+    const { avatarFile: _avatarFile, ...profileUpdates } = updates;
+    const updated = { ...currentUser, ...profileUpdates, ...(avatar ? { avatar } : {}) };
     setCurrentUser(updated);
     localStorage.setItem("inzozi_currentUser", JSON.stringify(updated));
     addNotification("Fan profile updated.");
+    return { ok: true, message: "Profile updated successfully." };
   };
 
-  const updateCreatorProfile = (creatorId: string, updates: CreatorProfileUpdate) => {
+  const updateCreatorProfile = async (creatorId: string, updates: CreatorProfileUpdate) => {
+    let avatar = updates.avatar;
+    if (updates.avatarFile) {
+      const uploaded = await uploadProfileImageWithApi(updates.avatarFile);
+      avatar = uploaded.profileImage;
+    }
+
+    const existingCreator = creators.find(creator => creator.id === creatorId);
+    const nextName = updates.name?.trim() || existingCreator?.name || currentUser?.fullName || "Creator";
+    const nextAvatar = avatar?.trim() || existingCreator?.avatar || currentUser?.avatar || "";
+
     const updatedCreators = creators.map(creator => {
       if (creator.id !== creatorId) return creator;
 
       return {
         ...creator,
-        name: updates.name?.trim() ?? creator.name,
-        avatar: updates.avatar?.trim() ?? creator.avatar,
+        name: nextName,
+        avatar: nextAvatar,
         location: updates.location?.trim() ?? creator.location,
         contact: updates.contact?.trim() ?? creator.contact,
         bio: updates.bio?.trim() ?? creator.bio,
@@ -602,7 +646,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCreators(updatedCreators);
     localStorage.setItem("inzozi_creators", JSON.stringify(updatedCreators));
+
+    const updatedPosts = posts.map(post => {
+      if (post.creatorId !== creatorId && post.creatorName !== existingCreator?.name) return post;
+
+      return {
+        ...post,
+        creatorName: nextName,
+        creatorAvatar: nextAvatar,
+      };
+    });
+    setPosts(updatedPosts);
+    localStorage.setItem("inzozi_posts", JSON.stringify(updatedPosts));
+
+    if (currentUser) {
+      const updatedUser = {
+        ...currentUser,
+        fullName: nextName,
+        email: updates.contact?.trim() || currentUser.email,
+        location: updates.location?.trim() || currentUser.location,
+        ...(nextAvatar ? { avatar: nextAvatar } : {}),
+      };
+      setCurrentUser(updatedUser);
+      localStorage.setItem("inzozi_currentUser", JSON.stringify(updatedUser));
+      saveUserProfile(updatedUser);
+    }
     addNotification("Creator profile updated. Brands and fans can now discover your latest profile details.");
+    return { ok: true, message: "Creator profile updated successfully." };
   };
 
   const saveTransactions = (newTx: WalletTransaction[]) => {
@@ -849,23 +919,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     type: "text" | "image" | "video",
     visibility: "public" | "subscriber" | "premium",
     price?: number,
-    mediaUrl?: string
+    mediaUrl?: string,
+    mediaFile?: File
   ) => {
-    const newPost: Post = {
-      id: "p_" + Date.now(),
-      creatorId: "c1", // Hardcoded creator user for testing
-      creatorName: "Kirenga Tech",
-      creatorAvatar: "🎨",
+    const created = await createContentWithApi({
       title,
-      content,
+      description: content,
       type,
       visibility,
-      price: visibility === "premium" ? (price || 1.99) : undefined,
-      likes: 0,
-      comments: [],
-      unlockedBy: [],
-      mediaUrl: mediaUrl || (type !== "text" ? "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=60" : undefined),
-    };
+      price,
+      mediaUrl,
+      mediaFile,
+    });
+
+    const activeCreator = creators.find(c => c.id === currentUser?.id) ?? creators.find(c => c.id === "c1") ?? creators[0];
+    const newPost = backendContentToPost(created, activeCreator);
 
     const updated = [newPost, ...posts];
     setPosts(updated);

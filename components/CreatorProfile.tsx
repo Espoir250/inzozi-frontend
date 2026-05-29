@@ -76,7 +76,7 @@ const defaultSettings: PersonalSettings = {
 };
 
 export const CreatorProfile: React.FC = () => {
-  const { activeRole, creators, currentUser, updateCreatorProfile } = useApp();
+  const { activeRole, creators, currentUser, updateCreatorProfile, updateFanProfile } = useApp();
   
   // Find creator profile (fallback if currentUser is creator but not in preloaded list)
   const myCreatorProfile = creators.find(c => c.id === "c1") || creators[0];
@@ -105,13 +105,16 @@ export const CreatorProfile: React.FC = () => {
   const [profileLocation, setProfileLocation] = useState(myCreatorProfile.location || "");
   const [profileContact, setProfileContact] = useState(myCreatorProfile.contact || currentUser?.phone || currentUser?.email || "");
   const [profileBio, setProfileBio] = useState(myCreatorProfile.bio || "");
+  const [profileSaveError, setProfileSaveError] = useState("");
   
   // Avatar state (Base64 preview)
   const [profileAvatar, setProfileAvatar] = useState<string>(myCreatorProfile.avatar || "");
+  const [profileAvatarFile, setProfileAvatarFile] = useState<File | null>(null);
   // Handle avatar file selection and preview
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setProfileAvatarFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setProfileAvatar(reader.result as string);
@@ -155,19 +158,40 @@ export const CreatorProfile: React.FC = () => {
     setTimeout(() => setAddressSaved(false), 2000);
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateCreatorProfile(myCreatorProfile.id, {
-      name: profileName,
-      // only include niche for creators
-      ...(activeRole === "creator" && { niche: profileNiche }),
-      location: profileLocation,
-      contact: profileContact,
-      bio: profileBio,
-      avatar: profileAvatar,
-    });
-    setShowProfileSaved(true);
-    setTimeout(() => setShowProfileSaved(false), 2000);
+    setProfileSaveError("");
+
+    try {
+      const result = activeRole === "creator"
+        ? await updateCreatorProfile(myCreatorProfile.id, {
+            name: profileName,
+            niche: profileNiche,
+            location: profileLocation,
+            contact: profileContact,
+            bio: profileBio,
+            avatar: profileAvatar,
+            avatarFile: profileAvatarFile ?? undefined,
+          })
+        : await updateFanProfile({
+            fullName: profileName,
+            email: profileContact,
+            location: profileLocation,
+            avatar: profileAvatar,
+            avatarFile: profileAvatarFile ?? undefined,
+          });
+
+      if (!result.ok) {
+        setProfileSaveError(result.message);
+        return;
+      }
+
+      setProfileAvatarFile(null);
+      setShowProfileSaved(true);
+      setTimeout(() => setShowProfileSaved(false), 2000);
+    } catch (error) {
+      setProfileSaveError(error instanceof Error ? error.message : "Could not update profile.");
+    }
   };
 
   // Launch simulated branded OAuth connect modal
@@ -438,6 +462,9 @@ export const CreatorProfile: React.FC = () => {
           <span className="text-emerald-400 text-xs font-semibold flex items-center gap-1">
             <Check className="w-3.5 h-3.5" /> Profile updated successfully
           </span>
+        )}
+        {profileSaveError && (
+          <span className="text-rose-400 text-xs font-semibold">{profileSaveError}</span>
         )}
       </div>
     </form>
