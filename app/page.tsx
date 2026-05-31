@@ -13,6 +13,9 @@ import { MessagingPanel } from "@/components/MessagingPanel";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { WalletDashboard } from "@/components/WalletDashboard";
 import { CreatorProfile } from "@/components/CreatorProfile";
+import { BrandProfile } from "@/components/BrandProfile";
+import { FanProfile } from "@/components/FanProfile";
+import { SearchCreators } from "@/components/SearchCreators";
 
 export default function Home() {
   const router = useRouter();
@@ -48,7 +51,12 @@ export default function Home() {
         return <WalletDashboard />;
 
       case "profile":
-        return <CreatorProfile />;
+        if (activeRole === "creator") return <CreatorProfile />;
+        if (activeRole === "business") return <BrandProfile />;
+        if (activeRole === "fan") return <FanProfile />;
+        return null;
+      case "search":
+        return <SearchCreators />;
 
       case "admin":
         if (activeRole === "admin") return <AdminDashboard />;

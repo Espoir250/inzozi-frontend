@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useState } from "react";
-import { ArrowRight, Briefcase, Heart, Lock, Mail, Phone, Shield, Sparkles, User } from "lucide-react";
+import { ArrowRight, Briefcase, CheckCircle2, Heart, Lock, Mail, Phone, Shield, Sparkles, User, X } from "lucide-react";
 import { Role, useApp } from "@/context/AppContext";
 
 type AccountRole = Exclude<Role, "landing">;
@@ -19,12 +19,13 @@ const accountRoles: { value: AccountRole; label: string; description: string; ic
 export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { loginUser, registerUser, isAuthenticated } = useApp();
+  const { loginUser, registerUser, verifyRegistration, isAuthenticated } = useApp();
   const requestedRole = mode === "register" ? searchParams.get("role") as AccountRole | null : null;
   const defaultRole = requestedRole && accountRoles.some(item => item.value === requestedRole) ? requestedRole : "fan";
+  const emailFromQuery = mode === "login" ? searchParams.get("email") ?? "" : "";
 
   const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(emailFromQuery);
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState<AccountRole>(defaultRole);
   const [password, setPassword] = useState("");
@@ -32,18 +33,29 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isClicked, setIsClicked] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'email' | 'verify'>('email');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationMessage, setVerificationMessage] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
   useEffect(() => {
     if (isAuthenticated) router.push("/");
   }, [isAuthenticated, router]);
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setMessage("");
     setIsSubmitting(true);
 
     if (mode === "register") {
-      if (password.length < 6) {
-        setMessage("Password must be at least 6 characters.");
+      if (password.length < 8) {
+        setMessage("Password must be at least 8 characters.");
         setIsSubmitting(false);
         return;
       }
@@ -54,17 +66,43 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
         return;
       }
 
-      const result = registerUser({ fullName, email, phone, role, password });
+      const result = await registerUser({ fullName, email, phone, role, password });
       setMessage(result.message);
-      if (result.ok) router.push("/");
+      if (result.ok && result.userId) {
+        setPendingUserId(result.userId);
+        setVerificationCode("");
+        setVerificationMessage("");
+      }
       setIsSubmitting(false);
       return;
     }
 
-    const result = loginUser(email, password);
+    const result = await loginUser(email, password);
     setMessage(result.message);
     if (result.ok) router.push("/");
     setIsSubmitting(false);
+  };
+
+  const handleVerifyRegistration = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!pendingUserId) return;
+
+    if (verificationCode.trim().length !== 6) {
+      setVerificationMessage("Enter the 6-digit code from your email.");
+      return;
+    }
+
+    setIsVerifying(true);
+    setVerificationMessage("");
+    const result = await verifyRegistration(pendingUserId, verificationCode);
+    setVerificationMessage(result.message);
+    setIsVerifying(false);
+
+    if (result.ok) {
+      window.setTimeout(() => {
+        router.push(`/login?email=${encodeURIComponent(email.trim().toLowerCase())}`);
+      }, 900);
+    }
   };
 
   const isRegister = mode === "register";
@@ -83,13 +121,13 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
             </h1>
             <p className="text-neutral-300 text-sm leading-6 mt-5 max-w-sm">
               {isRegister
-                ? "Register as a creator, business, fan, or admin and enter the correct dashboard immediately."
+                ? "Register as a creator, business, fan, or admin, then log in to enter the correct dashboard."
                 : "Sign in with the email and password you used during registration."}
             </p>
           </div>
 
           <p className="text-xs text-neutral-500">
-            Frontend demo authentication is stored in this browser until a backend API is connected.
+            Authentication is connected to the Inzozi Market API.
           </p>
         </section>
 
@@ -109,7 +147,129 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
             </Link>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Login form or Forgot password flow */}
+          {showForgot ? (
+            forgotStep === 'email' ? (
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                setResetMessage('Password reset is not connected to the backend yet.');
+              }} className="space-y-5">
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-neutral-500">Email address</span>
+                  <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                    <Mail className="w-4 h-4 text-neutral-500" />
+                    <input
+                      required
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className="w-full outline-none text-sm"
+                      placeholder="you@example.com"
+                    />
+                  </span>
+                </label>
+
+                <button type="submit" className="w-full bg-black text-white py-3 rounded-xl font-bold hover:bg-neutral-800">
+                  Send reset code
+                </button>
+
+                {resetMessage && (
+                  <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium">
+                    {resetMessage}
+                  </div>
+                )}
+
+                <button type="button" onClick={() => setShowForgot(false)} className="w-full mt-2 text-sm text-blue-600 hover:underline">
+                  Back to login
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                // Placeholder: verify code and reset password logic
+                if (newPassword.length < 6) {
+                  setResetMessage('Password must be at least 6 characters.');
+                  return;
+                }
+                if (newPassword !== confirmNewPassword) {
+                  setResetMessage('Passwords do not match.');
+                  return;
+                }
+                // Simulate successful password reset
+                setResetMessage('Password successfully reset. Redirecting to login...');
+                // Reset flow and return to login after a brief timeout
+                setTimeout(() => {
+                  setShowForgot(false);
+                  setForgotStep('email');
+                  setForgotEmail('');
+                  setResetCode('');
+                  setNewPassword('');
+                  setConfirmNewPassword('');
+                  setResetMessage('');
+                }, 1500);
+              }} className="space-y-5">
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-neutral-500">Verification code</span>
+                  <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                    <Lock className="w-4 h-4 text-neutral-500" />
+                    <input
+                      required
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value)}
+                      className="w-full outline-none text-sm"
+                      placeholder="Enter code"
+                    />
+                  </span>
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-neutral-500">New password</span>
+                  <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                    <Lock className="w-4 h-4 text-neutral-500" />
+                    <input
+                      required
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full outline-none text-sm"
+                      placeholder="New password"
+                    />
+                  </span>
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-neutral-500">Confirm new password</span>
+                  <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                    <Lock className="w-4 h-4 text-neutral-500" />
+                    <input
+                      required
+                      type="password"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      className="w-full outline-none text-sm"
+                      placeholder="Confirm new password"
+                    />
+                  </span>
+                </label>
+
+                <button type="submit" className="w-full bg-black text-white py-3 rounded-xl font-bold hover:bg-neutral-800">
+                  Reset password
+                </button>
+
+                {resetMessage && (
+                  <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium">
+                    {resetMessage}
+                  </div>
+                )}
+
+                <button type="button" onClick={() => setShowForgot(false)} className="w-full mt-2 text-sm text-blue-600 hover:underline">
+                  Back to login
+                </button>
+              </form>
+            )
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5">
+
             {isRegister && (
               <>
                 <label className="block">
@@ -189,10 +349,16 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   className="w-full outline-none text-sm"
-                  placeholder="Minimum 6 characters"
+                  placeholder={isRegister ? "Minimum 8 characters" : "Your password"}
+                  minLength={isRegister ? 8 : undefined}
                 />
               </span>
             </label>
+            { !isRegister && (
+              <div className="text-right mt-2">
+                <button type="button" onClick={() => setShowForgot(true)} className="text-sm text-blue-600 hover:underline">Forgot password?</button>
+              </div>
+            ) }
 
             {isRegister && (
               <label className="block">
@@ -227,8 +393,70 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
+          )}
         </section>
       </div>
-      </section>
+
+      {pendingUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-green-50 text-green-700">
+                  <CheckCircle2 className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-lg font-black">Verify your email</h3>
+                  <p className="mt-1 text-sm text-neutral-600">
+                    Enter the code sent to {email.trim().toLowerCase()}.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingUserId(null)}
+                className="rounded-full p-2 text-neutral-500 hover:bg-neutral-100 hover:text-black"
+                aria-label="Close verification form"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleVerifyRegistration} className="mt-6 space-y-4">
+              <label className="block">
+                <span className="text-xs font-bold uppercase text-neutral-500">Verification code</span>
+                <span className="mt-1.5 flex items-center gap-2 rounded-xl border border-neutral-300 px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                  <Lock className="h-4 w-4 text-neutral-500" />
+                  <input
+                    required
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={verificationCode}
+                    onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, ""))}
+                    className="w-full outline-none text-sm"
+                    placeholder="123456"
+                  />
+                </span>
+              </label>
+
+              {verificationMessage && (
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium">
+                  {verificationMessage}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isVerifying}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-black py-3 font-bold text-white hover:bg-neutral-800 disabled:opacity-60"
+              >
+                <span>{isVerifying ? "Verifying..." : "Verify and continue"}</span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </section>
   );
 };

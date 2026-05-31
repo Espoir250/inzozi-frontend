@@ -1,25 +1,43 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { loginWithApi, logoutWithApi, registerWithApi, verifyRegistrationWithApi } from "@/lib/authApi";
+import { BackendContent, createContentWithApi } from "@/lib/contentApi";
+import { uploadProfileImageWithApi } from "@/lib/userApi";
 
 export type Role = "landing" | "creator" | "business" | "fan" | "admin";
-export type Tab = "dashboard" | "feed" | "campaigns" | "messages" | "wallet" | "admin" | "profile";
+export type Tab = "dashboard" | "feed" | "campaigns" | "messages" | "wallet" | "admin" | "profile" | "search";
 
 export interface AuthUser {
   id: string;
+  fullName: string;
+  email?: string;
+  location?: string;
+  avatar?: string;
+  role: Exclude<Role, "landing">;
+  password?: string;
+  phone?: string;
+}
+
+type RegisterUserPayload = {
   fullName: string;
   email: string;
   phone: string;
   role: Exclude<Role, "landing">;
   password: string;
-}
+};
+
+type CreatorProfileUpdate = Pick<Creator, "name" | "avatar" | "location" | "contact" | "bio"> & {
+  niche?: string;
+  avatarFile?: File;
+};
 
 export interface Creator {
   id: string;
   name: string;
   avatar: string;
   niche: string;
-  followers: string;
+  followers: number;
   location: string;
   contact: string;
   engagement: string;
@@ -32,7 +50,9 @@ export interface Creator {
 export interface Business {
   id: string;
   name: string;
-  logo: string;
+  logo?: string;
+  email?: string;
+  contact?: string;
   niche: string;
   location: string;
   verified: boolean;
@@ -85,6 +105,7 @@ interface Notification {
   text: string;
   date: string;
   read: boolean;
+  linkTab?: Tab;
 }
 
 interface AppContextType {
@@ -113,19 +134,23 @@ interface AppContextType {
   pendingVerifications: { id: string; name: string; type: "creator" | "business"; niche: string; bio: string }[];
   
   // Methods
-  registerUser: (payload: Omit<AuthUser, "id">) => { ok: boolean; message: string };
-  loginUser: (email: string, password: string) => { ok: boolean; message: string };
-  logoutUser: () => void;
-  updateCreatorProfile: (creatorId: string, updates: Pick<Creator, "name" | "location" | "contact" | "bio" | "niche">) => void;
+  registerUser: (payload: RegisterUserPayload) => Promise<{ ok: boolean; message: string; userId?: string }>;
+  verifyRegistration: (userId: string, otp: string) => Promise<{ ok: boolean; message: string }>;
+  loginUser: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
+  logoutUser: () => Promise<void>;
+  updateFanProfile: (updates: Partial<AuthUser> & { avatarFile?: File }) => Promise<{ ok: boolean; message: string }>;
+  updateBusinessProfile: (brandId: string, updates: { name: string; avatar?: string; email?: string; contact?: string; bio: string }) => void;
+  updateCreatorProfile: (creatorId: string, updates: CreatorProfileUpdate) => Promise<{ ok: boolean; message: string }>;
   deposit: (amount: number, target: "fan" | "business") => void;
   withdraw: (amount: number, target: "creator" | "business" | "fan", method: string, details: string) => void;
   tipCreator: (creatorId: string, amount: number) => boolean;
   subscribeToCreator: (creatorId: string) => boolean;
   unlockPremiumPost: (postId: string) => boolean;
-  createPost: (title: string, content: string, type: "text" | "image" | "video", visibility: "public" | "subscriber" | "premium", price?: number, mediaUrl?: string) => void;
+  createPost: (title: string, content: string, type: "text" | "image" | "video", visibility: "public" | "subscriber" | "premium", price?: number, mediaUrl?: string, mediaFile?: File) => Promise<{ ok: boolean; message: string }>;
   likePost: (postId: string) => void;
   commentOnPost: (postId: string, text: string) => void;
   launchCampaignProposal: (creatorId: string, title: string, details: string, budget: number) => void;
+  startChat: (partnerId: string, partnerName: string) => void;
   respondToProposal: (proposalId: string, action: "accept" | "decline") => void;
   approveVerification: (id: string) => void;
   rejectVerification: (id: string) => void;
@@ -133,6 +158,7 @@ interface AppContextType {
   removePost: (postId: string) => void;
   dismissFlag: (postId: string) => void;
   clearNotifications: () => void;
+  addNotification: (text: string, linkTab?: Tab) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -143,7 +169,7 @@ const initialCreators: Creator[] = [
     name: "Kirenga Tech",
     avatar: "🎨",
     niche: "Technology & AI",
-    followers: "12.5K",
+    followers: 12500,
     location: "Kigali, Rwanda",
     contact: "kirenga.tech@example.com",
     engagement: "8.4%",
@@ -157,7 +183,7 @@ const initialCreators: Creator[] = [
     name: "Ganza Designs",
     avatar: "👗",
     niche: "Fashion & Art",
-    followers: "45.2K",
+    followers: 45200,
     location: "Nairobi, Kenya",
     contact: "hello@ganzadesigns.example",
     engagement: "6.2%",
@@ -171,7 +197,7 @@ const initialCreators: Creator[] = [
     name: "Inzozi Chef",
     avatar: "🍲",
     niche: "Food & Lifestyle",
-    followers: "8.2K",
+    followers: 8200,
     location: "Kampala, Uganda",
     contact: "bookings@inzozichef.example",
     engagement: "11.1%",
@@ -185,7 +211,7 @@ const initialCreators: Creator[] = [
     name: "Amani Sound",
     avatar: "🎙️",
     niche: "Music & Podcasts",
-    followers: "18.1K",
+    followers: 18100,
     location: "Dar es Salaam, Tanzania",
     contact: "amani.sound@example.com",
     engagement: "7.8%",
@@ -292,6 +318,27 @@ const initialTransactions: WalletTransaction[] = [
   { id: "tx2", type: "unlock_earned", amount: 120.00, description: "Post unlock earnings (Creator)", date: "2026-05-20" }
 ];
 
+const backendContentToPost = (content: BackendContent, creator?: Creator): Post => {
+  const postType = content.type === "article" ? "text" : content.type === "audio" ? "video" : content.type;
+  const visibility = content.visibility === "public" ? "public" : "premium";
+
+  return {
+    id: content.id,
+    creatorId: creator?.id ?? content.creatorId,
+    creatorName: creator?.name ?? "Creator",
+    creatorAvatar: creator?.avatar ?? "",
+    title: content.title,
+    content: content.description ?? "",
+    type: postType,
+    mediaUrl: content.contentUrl,
+    visibility,
+    price: content.price ?? undefined,
+    likes: 0,
+    comments: [],
+    unlockedBy: [],
+  };
+};
+
 const initialNotifications: Notification[] = [
   { id: "n1", text: "Welcome to InzoziMarket! Complete your profile to get started.", date: "Today", read: false }
 ];
@@ -326,6 +373,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bio: "Afrobeats and Amapiano producer crafting sounds live in Kigali."
     }
   ]);
+
 
   useEffect(() => {
     const readJson = <T,>(key: string): T | null => {
@@ -396,56 +444,138 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (activeRole !== "landing") localStorage.setItem("inzozi_activeRole", activeRole);
   }, [activeRole]);
 
+  const addNotification = (text: string, linkTab?: Tab) => {
+    const newNotif: Notification = {
+      id: "n_" + Date.now(),
+      text,
+      date: "Just now",
+      read: false,
+      linkTab
+    };
+    const updated = [newNotif, ...notifications];
+    setNotifications(updated);
+    localStorage.setItem("inzozi_notifications", JSON.stringify(updated));
+  };
+
   const getRegisteredUsers = (): AuthUser[] => {
     if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("inzozi_users");
-    return saved ? JSON.parse(saved) : [];
+    const savedProfiles = localStorage.getItem("inzozi_user_profiles");
+
+    try {
+      return savedProfiles ? JSON.parse(savedProfiles) : [];
+    } catch {
+      return [];
+    }
   };
 
-  const registerUser = (payload: Omit<AuthUser, "id">) => {
+  const saveUserProfile = (user: AuthUser) => {
     const users = getRegisteredUsers();
-    const normalizedEmail = payload.email.trim().toLowerCase();
+    const normalizedEmail = user.email?.trim().toLowerCase();
+    const updatedUsers = [
+      user,
+      ...users.filter(item => item.email?.toLowerCase() !== normalizedEmail)
+    ];
 
-    if (users.some(user => user.email.toLowerCase() === normalizedEmail)) {
-      return { ok: false, message: "An account with this email already exists." };
-    }
-
-    const newUser: AuthUser = {
-      ...payload,
-      id: "user_" + Date.now(),
-      email: normalizedEmail,
-      fullName: payload.fullName.trim(),
-      phone: payload.phone.trim()
-    };
-
-    localStorage.setItem("inzozi_users", JSON.stringify([newUser, ...users]));
-    localStorage.setItem("inzozi_currentUser", JSON.stringify(newUser));
-    localStorage.setItem("inzozi_activeRole", newUser.role);
-    setCurrentUser(newUser);
-    setActiveRole(newUser.role);
-    setActiveTab(newUser.role === "fan" || newUser.role === "creator" ? "feed" : "dashboard");
-    return { ok: true, message: "Account created successfully." };
+    localStorage.setItem("inzozi_user_profiles", JSON.stringify(updatedUsers));
   };
 
-  const loginUser = (email: string, password: string) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = getRegisteredUsers().find(
-      item => item.email.toLowerCase() === normalizedEmail && item.password === password
-    );
-
-    if (!user) {
-      return { ok: false, message: "Invalid email or password." };
-    }
-
+  const saveAuthenticatedUser = (user: AuthUser, accessToken: string, refreshToken: string) => {
+    localStorage.setItem("inzozi_accessToken", accessToken);
+    localStorage.setItem("inzozi_refreshToken", refreshToken);
     localStorage.setItem("inzozi_currentUser", JSON.stringify(user));
     localStorage.setItem("inzozi_activeRole", user.role);
     setCurrentUser(user);
     setActiveRole(user.role);
     setActiveTab(user.role === "fan" || user.role === "creator" ? "feed" : "dashboard");
-    return { ok: true, message: "Welcome back." };
   };
 
-  const logoutUser = () => {
+  const registerUser = async (payload: RegisterUserPayload) => {
+    const normalizedEmail = payload.email.trim().toLowerCase();
+
+    try {
+      const result = await registerWithApi({
+        fullName: payload.fullName,
+        email: normalizedEmail,
+        phone: payload.phone,
+        password: payload.password,
+        role: payload.role,
+      });
+
+      saveUserProfile({
+        id: "pending_" + Date.now(),
+        email: normalizedEmail,
+        fullName: payload.fullName.trim(),
+        phone: payload.phone.trim(),
+        role: payload.role,
+      });
+
+      return {
+        ok: true,
+        message: `${result.message} Enter the code sent to your email to continue.`,
+        userId: result.userId,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Could not create account. Please try again.",
+      };
+    }
+  };
+
+  const verifyRegistration = async (userId: string, otp: string) => {
+    try {
+      const result = await verifyRegistrationWithApi({ userId, otp });
+      return {
+        ok: true,
+        message: `${result.message} You can now log in.`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Could not verify account. Please try again.",
+      };
+    }
+  };
+
+  const loginUser = async (email: string, password: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    try {
+      const result = await loginWithApi(normalizedEmail, password);
+      const savedProfile = getRegisteredUsers().find(
+        item => item.email?.toLowerCase() === normalizedEmail
+      );
+
+      if (!result.accessToken || !result.refreshToken) {
+        return { ok: false, message: "Login succeeded, but the API did not return tokens." };
+      }
+
+      const user: AuthUser = {
+        id: result.userId ?? savedProfile?.id ?? "user_" + Date.now(),
+        fullName: savedProfile?.fullName ?? normalizedEmail,
+        email: normalizedEmail,
+        phone: savedProfile?.phone,
+        avatar: savedProfile?.avatar,
+        location: savedProfile?.location,
+        role: result.role ?? savedProfile?.role ?? "fan",
+      };
+
+      saveUserProfile(user);
+      saveAuthenticatedUser(user, result.accessToken, result.refreshToken);
+      return { ok: true, message: result.message };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Invalid email or password.",
+      };
+    }
+  };
+
+  const logoutUser = async () => {
+    const refreshToken = localStorage.getItem("inzozi_refreshToken");
+    await logoutWithApi(refreshToken);
+    localStorage.removeItem("inzozi_accessToken");
+    localStorage.removeItem("inzozi_refreshToken");
     localStorage.removeItem("inzozi_currentUser");
     localStorage.removeItem("inzozi_activeRole");
     setCurrentUser(null);
@@ -453,23 +583,96 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveTab("dashboard");
   };
 
-  const updateCreatorProfile = (creatorId: string, updates: Pick<Creator, "name" | "location" | "contact" | "bio" | "niche">) => {
+  const updateBusinessProfile = (brandId: string, updates: { name: string; avatar?: string; email?: string; contact?: string; bio: string }) => {
+    const updatedBusinesses = businesses.map(b => {
+      if (b.id !== brandId) return b;
+      return {
+        ...b,
+        name: updates.name.trim(),
+        logo: updates.avatar?.trim() ?? b.logo,
+        email: updates.email?.trim(),
+        contact: updates.contact?.trim(),
+        bio: updates.bio?.trim()
+      };
+    });
+    setBusinesses(updatedBusinesses);
+    localStorage.setItem("inzozi_businesses", JSON.stringify(updatedBusinesses));
+    addNotification("Brand profile updated.");
+  };
+
+  const updateFanProfile = async (updates: Partial<AuthUser> & { avatarFile?: File }) => {
+    if (!currentUser) {
+      return { ok: false, message: "Please log in before updating your profile." };
+    }
+
+    let avatar = updates.avatar;
+    if (updates.avatarFile) {
+      const uploaded = await uploadProfileImageWithApi(updates.avatarFile);
+      avatar = uploaded.profileImage;
+    }
+
+    const { avatarFile: _avatarFile, ...profileUpdates } = updates;
+    const updated = { ...currentUser, ...profileUpdates, ...(avatar ? { avatar } : {}) };
+    setCurrentUser(updated);
+    localStorage.setItem("inzozi_currentUser", JSON.stringify(updated));
+    addNotification("Fan profile updated.");
+    return { ok: true, message: "Profile updated successfully." };
+  };
+
+  const updateCreatorProfile = async (creatorId: string, updates: CreatorProfileUpdate) => {
+    let avatar = updates.avatar;
+    if (updates.avatarFile) {
+      const uploaded = await uploadProfileImageWithApi(updates.avatarFile);
+      avatar = uploaded.profileImage;
+    }
+
+    const existingCreator = creators.find(creator => creator.id === creatorId);
+    const nextName = updates.name?.trim() || existingCreator?.name || currentUser?.fullName || "Creator";
+    const nextAvatar = avatar?.trim() || existingCreator?.avatar || currentUser?.avatar || "";
+
     const updatedCreators = creators.map(creator => {
       if (creator.id !== creatorId) return creator;
 
       return {
         ...creator,
-        name: updates.name.trim(),
-        location: updates.location.trim(),
-        contact: updates.contact.trim(),
-        bio: updates.bio.trim(),
-        niche: updates.niche.trim()
+        name: nextName,
+        avatar: nextAvatar,
+        location: updates.location?.trim() ?? creator.location,
+        contact: updates.contact?.trim() ?? creator.contact,
+        bio: updates.bio?.trim() ?? creator.bio,
+        niche: updates.niche?.trim() ?? creator.niche,
       };
     });
 
     setCreators(updatedCreators);
     localStorage.setItem("inzozi_creators", JSON.stringify(updatedCreators));
+
+    const updatedPosts = posts.map(post => {
+      if (post.creatorId !== creatorId && post.creatorName !== existingCreator?.name) return post;
+
+      return {
+        ...post,
+        creatorName: nextName,
+        creatorAvatar: nextAvatar,
+      };
+    });
+    setPosts(updatedPosts);
+    localStorage.setItem("inzozi_posts", JSON.stringify(updatedPosts));
+
+    if (currentUser) {
+      const updatedUser = {
+        ...currentUser,
+        fullName: nextName,
+        email: updates.contact?.trim() || currentUser.email,
+        location: updates.location?.trim() || currentUser.location,
+        ...(nextAvatar ? { avatar: nextAvatar } : {}),
+      };
+      setCurrentUser(updatedUser);
+      localStorage.setItem("inzozi_currentUser", JSON.stringify(updatedUser));
+      saveUserProfile(updatedUser);
+    }
     addNotification("Creator profile updated. Brands and fans can now discover your latest profile details.");
+    return { ok: true, message: "Creator profile updated successfully." };
   };
 
   const saveTransactions = (newTx: WalletTransaction[]) => {
@@ -477,17 +680,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("inzozi_transactions", JSON.stringify(newTx));
   };
 
-  const addNotification = (text: string) => {
-    const newNotif: Notification = {
-      id: "n_" + Date.now(),
-      text,
-      date: "Just Now",
-      read: false
-    };
-    const updated = [newNotif, ...notifications];
-    setNotifications(updated);
-    localStorage.setItem("inzozi_notifications", JSON.stringify(updated));
-  };
+// Duplicate addNotification removed; original implementation kept above.
+
 
   // Deposit Action
   const deposit = (amount: number, target: "fan" | "business") => {
@@ -719,34 +913,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Creator Upload Content
-  const createPost = (
+  const createPost = async (
     title: string,
     content: string,
     type: "text" | "image" | "video",
     visibility: "public" | "subscriber" | "premium",
     price?: number,
-    mediaUrl?: string
+    mediaUrl?: string,
+    mediaFile?: File
   ) => {
-    const newPost: Post = {
-      id: "p_" + Date.now(),
-      creatorId: "c1", // Hardcoded creator user for testing
-      creatorName: "Kirenga Tech",
-      creatorAvatar: "🎨",
+    const created = await createContentWithApi({
       title,
-      content,
+      description: content,
       type,
       visibility,
-      price: visibility === "premium" ? (price || 1.99) : undefined,
-      likes: 0,
-      comments: [],
-      unlockedBy: [],
-      mediaUrl: mediaUrl || (type !== "text" ? "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=60" : undefined),
-    };
+      price,
+      mediaUrl,
+      mediaFile,
+    });
+
+    const activeCreator = creators.find(c => c.id === currentUser?.id) ?? creators.find(c => c.id === "c1") ?? creators[0];
+    const newPost = backendContentToPost(created, activeCreator);
 
     const updated = [newPost, ...posts];
     setPosts(updated);
     localStorage.setItem("inzozi_posts", JSON.stringify(updated));
     addNotification(`Successfully published new ${visibility} post: "${title}"`);
+    return { ok: true, message: "Post created successfully." };
   };
 
   // Engage with Posts
@@ -821,6 +1014,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     saveTransactions([escTx, ...transactions]);
     addNotification(`Sent sponsorship proposal to ${creatorName}. $${budget.toFixed(2)} held in escrow.`);
+  };
+
+  // Start a direct message thread with a user
+  const startChat = (partnerId: string, partnerName: string) => {
+    if (!currentUser) return;
+    
+    // Check if a direct message chat already exists
+    const existing = proposals.find(p => 
+      p.title === "Direct Message" && 
+      ((p.creatorId === partnerId && p.businessId === currentUser.id) || 
+       (p.businessId === partnerId && p.creatorId === currentUser.id))
+    );
+    
+    if (existing) {
+      return; // Chat already exists
+    }
+
+    const newChat: Proposal = {
+      id: "chat_" + Date.now(),
+      businessId: currentUser.id,
+      businessName: currentUser.fullName || currentUser.id,
+      creatorId: partnerId,
+      creatorName: partnerName,
+      title: "Direct Message",
+      details: "Direct conversation",
+      budget: 0,
+      status: "accepted", // Auto-accept DMs so they can just chat
+      contractCreated: false,
+      messages: []
+    };
+
+    const updatedProposals = [newChat, ...proposals];
+    setProposals(updatedProposals);
+    localStorage.setItem("inzozi_proposals", JSON.stringify(updatedProposals));
   };
 
   // Creator responds to proposal (accept or decline)
@@ -907,7 +1134,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           name: verifiedItem.name,
           avatar: "🎧",
           niche: verifiedItem.niche,
-          followers: "5.4K",
+          followers: 5400,
           location: "Kigali, Rwanda",
           contact: "bookings@example.com",
           engagement: "9.2%",
@@ -954,6 +1181,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addNotification(`Rejected profile verification request for "${rejectedItem.name}".`);
     }
   };
+
+  // Helper: parse follower count to a number value for sorting/filtering
+  const getFollowersValue = (num: number) => num;
 
   // Flag post action
   const flagPost = (postId: string, reason: string) => {
@@ -1016,9 +1246,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         proposals,
         notifications,
         pendingVerifications,
+        updateFanProfile,
         registerUser,
+        verifyRegistration,
         loginUser,
         logoutUser,
+        updateBusinessProfile,
         updateCreatorProfile,
         deposit,
         withdraw,
@@ -1029,13 +1262,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         likePost,
         commentOnPost,
         launchCampaignProposal,
+        startChat,
         respondToProposal,
         approveVerification,
         rejectVerification,
         flagPost,
         removePost,
         dismissFlag,
-        clearNotifications
+        clearNotifications,
+        addNotification
       }}
     >
       {children}

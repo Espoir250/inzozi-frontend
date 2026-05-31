@@ -32,7 +32,7 @@ export default function Header() {
             Start a page
           </Link>
           <Link
-            href="/sign-in"
+            href="/login"
             className="inline-flex items-center justify-center rounded-full bg-[var(--brand-yellow)] px-4 py-2 text-sm font-semibold text-[var(--brand-black)]"
           >
             Sign in

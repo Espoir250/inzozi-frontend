@@ -31,7 +31,7 @@ export default function ViewTiersPage() {
                   </li>
                 ))}
               </ul>
-              <Link href="/sign-in" className="mt-8 inline-flex w-full justify-center rounded-full bg-[var(--brand-yellow)] px-4 py-3 text-sm font-semibold text-[var(--brand-black)] hover:brightness-95">
+              <Link href="/login" className="mt-8 inline-flex w-full justify-center rounded-full bg-[var(--brand-yellow)] px-4 py-3 text-sm font-semibold text-[var(--brand-black)] hover:brightness-95">
                 Choose {tier.name}
               </Link>
             </div>

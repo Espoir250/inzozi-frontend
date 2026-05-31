@@ -34,8 +34,9 @@ export const CreatorDashboard: React.FC = () => {
   const [type, setType] = useState<"text" | "image" | "video">("text");
   const [visibility, setVisibility] = useState<"public" | "subscriber" | "premium">("public");
   const [price, setPrice] = useState("2.99");
-  const [mediaUrl, setMediaUrl] = useState("");
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
 
   // Settings states
   const [subFee, setSubFee] = useState("10.00");
@@ -44,29 +45,44 @@ export const CreatorDashboard: React.FC = () => {
   // Post Metrics state
   const [selectedMetricsPost, setSelectedMetricsPost] = useState<Post | null>(null);
 
-  const handlePublish = (e: React.FormEvent) => {
+  const handlePublish = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !content) return;
+    if (type !== "text" && !mediaFile) {
+      setPublishError("Please choose an image or video file before publishing.");
+      return;
+    }
 
     setIsPublishing(true);
-    setTimeout(() => {
-      createPost(
+    setPublishError("");
+
+    try {
+      const result = await createPost(
         title,
         content,
         type,
         visibility,
         visibility === "premium" ? parseFloat(price) : undefined,
-        mediaUrl || undefined
+        undefined,
+        mediaFile ?? undefined
       );
-      
+
+      if (!result.ok) {
+        setPublishError(result.message);
+        return;
+      }
+
       // Reset form
       setTitle("");
       setContent("");
       setType("text");
       setVisibility("public");
-      setMediaUrl("");
+      setMediaFile(null);
+    } catch (error) {
+      setPublishError(error instanceof Error ? error.message : "Could not publish content.");
+    } finally {
       setIsPublishing(false);
-    }, 800);
+    }
   };
 
   const handleSaveSettings = () => {
@@ -174,7 +190,10 @@ export const CreatorDashboard: React.FC = () => {
                   <label className="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase">Media Type</label>
                   <select
                     value={type}
-                    onChange={(e) => setType(e.target.value as "text" | "image" | "video")}
+                    onChange={(e) => {
+                      setType(e.target.value as "text" | "image" | "video");
+                      setMediaFile(null);
+                    }}
                     className="w-full px-4 py-2.5 rounded-xl glass-input text-sm"
                   >
                     <option value="text">Text Article</option>
@@ -199,14 +218,19 @@ export const CreatorDashboard: React.FC = () => {
 
               {type !== "text" && (
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase">Media URL (Mock)</label>
+                  <label className="block text-xs font-semibold text-zinc-400 mb-1.5 uppercase">Upload Media</label>
                   <input
-                    type="url"
-                    placeholder="https://images.unsplash.com/photo-..."
-                    value={mediaUrl}
-                    onChange={(e) => setMediaUrl(e.target.value)}
+                    type="file"
+                    required
+                    accept={type === "image" ? "image/*" : "video/mp4,video/webm,video/quicktime"}
+                    onChange={(e) => setMediaFile(e.target.files?.[0] ?? null)}
                     className="w-full px-4 py-2.5 rounded-xl glass-input text-sm"
                   />
+                  {mediaFile && (
+                    <p className="mt-1.5 text-[10px] text-zinc-400">
+                      Selected: {mediaFile.name}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -237,6 +261,9 @@ export const CreatorDashboard: React.FC = () => {
               >
                 {isPublishing ? "Publishing asset..." : "Publish to Inzozi Feed"}
               </button>
+              {publishError && (
+                <p className="text-xs font-semibold text-rose-400">{publishError}</p>
+              )}
             </form>
           </div>
         </div>

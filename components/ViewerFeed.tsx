@@ -14,8 +14,37 @@ import {
   Sparkles,
   Unlock,
   Search,
-  MapPin
+  MapPin,
+  X
 } from "lucide-react";
+import Link from "next/link";
+
+const isImageAvatar = (avatar?: string) => {
+  if (!avatar) return false;
+  return avatar.startsWith("http://") ||
+    avatar.startsWith("https://") ||
+    avatar.startsWith("data:image/") ||
+    avatar.startsWith("/");
+};
+
+const ProfileAvatar = ({
+  avatar,
+  name,
+  className = "w-10 h-10 rounded-xl text-xl",
+}: {
+  avatar?: string;
+  name: string;
+  className?: string;
+}) => (
+  <div className={`${className} bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shrink-0`}>
+    {isImageAvatar(avatar) ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={avatar} alt={`${name} profile picture`} className="h-full w-full object-cover" />
+    ) : (
+      <span>{avatar || name.charAt(0).toUpperCase()}</span>
+    )}
+  </div>
+);
 
 export const ViewerFeed: React.FC = () => {
   const { 
@@ -29,6 +58,9 @@ export const ViewerFeed: React.FC = () => {
     tipCreator,
     flagPost
   } = useApp();
+
+  // State for selected creator to view profile in a modal (fan view)
+  const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
 
   // Local state for tracking subscribed creators in this browser session
   const [subscribedIds, setSubscribedIds] = useState<string[]>(() => {
@@ -165,12 +197,10 @@ export const ViewerFeed: React.FC = () => {
                     {/* Header */}
                     <div className="p-4 flex items-center justify-between border-b border-white/5">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl">
-                          {post.creatorAvatar}
-                        </div>
+                        <ProfileAvatar avatar={creatorObj?.avatar ?? post.creatorAvatar} name={post.creatorName} />
                         <div>
                           <div className="flex items-center gap-1">
-                            <span className="font-bold text-sm text-zinc-200">{post.creatorName}</span>
+                                                <Link href={`/creator/${creatorObj?.id}`} className="font-bold text-sm text-zinc-200 hover:underline">{post.creatorName}</Link>
                             {isVerified && <CheckCircle className="w-3.5 h-3.5 text-cyan-400" />}
                           </div>
                           <span className="text-[10px] text-zinc-500 uppercase font-semibold">{post.visibility} content</span>
@@ -338,11 +368,13 @@ export const ViewerFeed: React.FC = () => {
               ) : filteredCreators.map(creator => (
                 <div key={creator.id} className="flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-xl shrink-0">{creator.avatar}</span>
+                    <ProfileAvatar avatar={creator.avatar} name={creator.name} className="w-9 h-9 rounded-xl text-xl" />
                     <div className="min-w-0">
                       <div className="flex items-center gap-1">
-                        <h4 className="font-bold text-xs text-white truncate">{creator.name}</h4>
-                        {creator.verified && <CheckCircle className="w-3 h-3 text-cyan-400 shrink-0" />}
+                        <button className="flex items-center gap-1 font-bold text-xs text-white truncate hover:underline" onClick={() => setSelectedCreator(creator)}>
+                          <h4 className="text-xs text-white truncate">{creator.name}</h4>
+                          {creator.verified && <CheckCircle className="w-3 h-3 text-cyan-400 shrink-0" />}
+                        </button>
                       </div>
                       <span className="text-[10px] text-zinc-500 block truncate">{creator.niche}</span>
                       <span className="text-[10px] text-zinc-500 flex items-center gap-1 truncate">
@@ -485,6 +517,30 @@ export const ViewerFeed: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Creator Detail Modal for Fan */}
+      {selectedCreator && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md glass-panel p-6 rounded-2xl border border-white/10 shadow-2xl relative">
+            <button className="absolute top-2 right-2 text-zinc-400 hover:text-white" onClick={() => setSelectedCreator(null)}>
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-4 mb-4">
+              <ProfileAvatar avatar={selectedCreator.avatar} name={selectedCreator.name} className="w-12 h-12 rounded-xl text-2xl" />
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-1">
+                  {selectedCreator.name}
+                  {selectedCreator.verified && <CheckCircle className="w-4 h-4 text-cyan-400" />}
+                </h3>
+                <p className="text-xs text-zinc-400">{selectedCreator.niche}</p>
+              </div>
+            </div>
+            <p className="text-sm text-zinc-300 mb-2"><strong>Location:</strong> {selectedCreator.location}</p>
+            <p className="text-sm text-zinc-300 mb-2"><strong>Contact:</strong> {selectedCreator.contact}</p>
+            <p className="text-sm text-zinc-300"><strong>Bio:</strong> {selectedCreator.bio}</p>
           </div>
         </div>
       )}

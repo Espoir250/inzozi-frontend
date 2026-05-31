@@ -29,7 +29,7 @@ export default function StartPage() {
               <p className="text-sm uppercase tracking-[0.35em] text-[var(--brand-yellow)]">Get started</p>
               <h2 className="mt-3 text-3xl font-semibold">Make your first page in minutes</h2>
             </div>
-            <Link href="/sign-up" className="rounded-full bg-[var(--brand-yellow)] px-8 py-4 text-sm font-semibold text-[var(--brand-black)] hover:brightness-95">
+            <Link href="/register?role=creator" className="rounded-full bg-[var(--brand-yellow)] px-8 py-4 text-sm font-semibold text-[var(--brand-black)] hover:brightness-95">
               Start now
             </Link>
           </div>
