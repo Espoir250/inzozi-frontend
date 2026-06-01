@@ -268,12 +268,22 @@ export const ViewerFeed: React.FC = () => {
 
                           {post.mediaUrl && (
                             <div className="rounded-xl overflow-hidden border border-white/5 max-h-[300px] bg-black/40 flex items-center justify-center">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img 
-                                src={post.mediaUrl} 
-                                alt={post.title}
-                                className="w-full h-full object-cover max-h-[300px]"
-                              />
+                              {post.type === "video" ? (
+                                <video 
+                                  src={post.mediaUrl} 
+                                  controls 
+                                  className="w-full h-full object-cover max-h-[300px]"
+                                />
+                              ) : (
+                                <>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img 
+                                    src={post.mediaUrl} 
+                                    alt={post.title}
+                                    className="w-full h-full object-cover max-h-[300px]"
+                                  />
+                                </>
+                              )}
                             </div>
                           )}
                         </>

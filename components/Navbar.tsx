@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useApp, Role } from "@/context/AppContext";
-import { Bell, Wallet, Sparkles, ChevronDown, LogOut, Shield, Briefcase, Heart, UserRound } from "lucide-react";
+import { Bell, Wallet, Sparkles, ChevronDown, LogOut, Shield, Briefcase, Heart, UserRound, Menu } from "lucide-react";
 
 export const Navbar: React.FC = () => {
   const router = useRouter();
@@ -12,6 +12,7 @@ export const Navbar: React.FC = () => {
     activeRole,
     setActiveRole,
     setActiveTab,
+    setMobileMenuOpen,
     currentUser,
     logoutUser,
     fanBalance,
@@ -68,17 +69,27 @@ export const Navbar: React.FC = () => {
 
   return (
     <header className="sticky top-0 z-50 glass-panel border-b border-white/5 py-4 px-6 md:px-12 flex justify-between items-center">
-      {/* Brand Logo */}
-      <div 
-        className="flex items-center gap-2 cursor-pointer"
-        onClick={() => { setActiveRole("landing"); }}
-      >
-        <div className="bg-gradient-brand w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20">
-          I
+      {/* Brand Logo & Mobile Toggle */}
+      <div className="flex items-center gap-3">
+        {activeRole !== "landing" && (
+          <button 
+            className="md:hidden p-2 -ml-2 rounded-xl hover:bg-white/5 text-zinc-300"
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+        )}
+        <div 
+          className="flex items-center gap-2 cursor-pointer"
+          onClick={() => { setActiveRole("landing"); }}
+        >
+          <div className="bg-gradient-brand w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20">
+            I
+          </div>
+          <span className="font-bold text-xl tracking-tight text-gradient-brand hidden sm:block">
+            InzoziMarket
+          </span>
         </div>
-        <span className="font-bold text-xl tracking-tight text-gradient-brand">
-          InzoziMarket
-        </span>
       </div>
 
       {/* Main Actions */}

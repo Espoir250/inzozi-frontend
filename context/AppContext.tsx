@@ -113,6 +113,8 @@ interface AppContextType {
   setActiveRole: (role: Role) => void;
   activeTab: Tab;
   setActiveTab: (tab: Tab) => void;
+  isMobileMenuOpen: boolean;
+  setMobileMenuOpen: (isOpen: boolean) => void;
   currentUser: AuthUser | null;
   isAuthenticated: boolean;
   
@@ -347,6 +349,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [activeRole, setActiveRole] = useState<Role>("landing");
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [fanBalance, setFanBalance] = useState<number>(50.00);
   const [creatorBalance, setCreatorBalance] = useState<number>(120.00);
   const [businessBalance, setBusinessBalance] = useState<number>(500.00);
@@ -1233,6 +1236,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveRole,
         activeTab,
         setActiveTab,
+        isMobileMenuOpen,
+        setMobileMenuOpen,
         currentUser,
         isAuthenticated: Boolean(currentUser),
         fanBalance,

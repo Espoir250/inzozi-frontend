@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { 
   ShieldAlert, 
@@ -13,13 +13,19 @@ import {
   DollarSign,
   BarChart3,
   Settings,
-  Scale
+  Scale,
+  ArrowRight,
+  TrendingUp
 } from "lucide-react";
 
+type AdminDesk = "verification" | "moderation" | "disputes" | "analytics" | "settings";
+
 export const AdminDashboard: React.FC = () => {
+  const [activeDesk, setActiveDesk] = useState<AdminDesk>("verification");
   const { 
     adminBalance, 
     creators, 
+    businesses,
     posts, 
     pendingVerifications, 
     approveVerification, 
@@ -29,8 +35,20 @@ export const AdminDashboard: React.FC = () => {
   } = useApp();
 
   const flaggedPosts = posts.filter(p => p.flagged);
+  const premiumPosts = posts.filter(p => p.visibility === "premium");
+  const publicPosts = posts.filter(p => p.visibility === "public");
+  const paidShare = posts.length ? Math.round((premiumPosts.length / posts.length) * 100) : 0;
+  const flaggedShare = posts.length ? Math.round((flaggedPosts.length / posts.length) * 100) : 0;
+  const growthSignals = useMemo(() => [
+    { label: "Creator supply", value: creators.length, detail: `${pendingVerifications.length} waiting for approval` },
+    { label: "Business demand", value: businesses.length, detail: "Registered brand profiles" },
+    { label: "Published content", value: posts.length, detail: `${paidShare}% premium content mix` },
+    { label: "Platform safety", value: `${flaggedShare}%`, detail: "Flagged content rate" },
+  ], [businesses.length, creators.length, flaggedShare, paidShare, pendingVerifications.length, posts.length]);
+
   const capabilityCards = [
     {
+      id: "verification" as const,
       title: "User Verification",
       description: "Review creator and business applications before they receive trusted platform status.",
       value: pendingVerifications.length,
@@ -39,6 +57,7 @@ export const AdminDashboard: React.FC = () => {
       tone: "purple"
     },
     {
+      id: "moderation" as const,
       title: "Content Moderation",
       description: "Remove inappropriate posts and clear false-positive reports from the public feed.",
       value: flaggedPosts.length,
@@ -47,6 +66,7 @@ export const AdminDashboard: React.FC = () => {
       tone: "rose"
     },
     {
+      id: "disputes" as const,
       title: "Reports & Disputes",
       description: "Track reported activity, review contested actions, and keep support cases moving.",
       value: flaggedPosts.length,
@@ -55,6 +75,7 @@ export const AdminDashboard: React.FC = () => {
       tone: "amber"
     },
     {
+      id: "analytics" as const,
       title: "Analytics & Growth",
       description: "Monitor creator supply, published content, paid posts, and platform revenue health.",
       value: creators.length + posts.length,
@@ -63,6 +84,7 @@ export const AdminDashboard: React.FC = () => {
       tone: "cyan"
     },
     {
+      id: "settings" as const,
       title: "System Settings",
       description: "Keep platform rules, commission behavior, and operational safeguards consistent.",
       value: 5,
@@ -99,13 +121,20 @@ export const AdminDashboard: React.FC = () => {
       {/* Admin Capability Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         {capabilityCards.map(card => (
-          <div
+          <button
             key={card.title}
-            className="glass-panel p-4 sm:p-5 rounded-xl border border-white/5 min-h-[174px] flex flex-col justify-between gap-5"
+            type="button"
+            onClick={() => setActiveDesk(card.id)}
+            className={`group glass-panel p-4 sm:p-5 rounded-xl border min-h-[174px] flex flex-col justify-between gap-5 text-left transition-all duration-200 hover:-translate-y-1 hover:border-white/20 hover:bg-white/7 hover:shadow-xl hover:shadow-black/20 focus:outline-none focus:ring-2 focus:ring-white/20 ${
+              activeDesk === card.id ? "border-white/25 bg-white/8" : "border-white/5"
+            }`}
           >
             <div className="space-y-3">
-              <div className={`w-10 h-10 rounded-lg border flex items-center justify-center ${toneClasses[card.tone]}`}>
-                {card.icon}
+              <div className="flex items-center justify-between gap-3">
+                <div className={`w-10 h-10 rounded-lg border flex items-center justify-center ${toneClasses[card.tone]}`}>
+                  {card.icon}
+                </div>
+                <ArrowRight className={`w-4 h-4 transition-all ${activeDesk === card.id ? "text-white translate-x-0" : "text-zinc-600 group-hover:text-white"}`} />
               </div>
               <div>
                 <h2 className="text-sm font-extrabold text-white leading-5">{card.title}</h2>
@@ -116,7 +145,7 @@ export const AdminDashboard: React.FC = () => {
               <span className="text-2xl font-black text-white">{card.value}</span>
               <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 pb-1">{card.label}</span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -169,13 +198,13 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Verification Queue Panel */}
-        <div className="glass-panel p-4 sm:p-6 rounded-xl border border-white/5 flex flex-col min-h-[420px]">
+      <div className="glass-panel p-4 sm:p-6 rounded-xl border border-white/5 min-h-[460px]">
+        {activeDesk === "verification" && (
+        <div className="flex flex-col min-h-[420px]">
           <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <CheckSquare className="w-5 h-5 text-purple-400" />
-              <span>Profile Verifications ({pendingVerifications.length})</span>
+              <span>Pending User Verification ({pendingVerifications.length})</span>
             </h2>
             <span className="text-[10px] uppercase font-bold tracking-wider text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded-full px-2.5 py-1 w-max">
               User approval
@@ -230,20 +259,25 @@ export const AdminDashboard: React.FC = () => {
             )}
           </div>
         </div>
+        )}
 
-        {/* Flagged Content moderation Panel */}
-        <div className="glass-panel p-4 sm:p-6 rounded-xl border border-white/5 flex flex-col min-h-[420px]">
+        {(activeDesk === "moderation" || activeDesk === "disputes") && (
+        <div className="flex flex-col min-h-[420px]">
           <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-rose-400" />
-              <span>Flagged Posts Desk ({flaggedPosts.length})</span>
+              {activeDesk === "disputes" ? <Scale className="w-5 h-5 text-amber-400" /> : <ShieldAlert className="w-5 h-5 text-rose-400" />}
+              <span>{activeDesk === "disputes" ? "Reports & Disputes" : "Flagged Posts Desk"} ({flaggedPosts.length})</span>
             </h2>
-            <span className="text-[10px] uppercase font-bold tracking-wider text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-full px-2.5 py-1 w-max">
-              Reports & disputes
+            <span className={`text-[10px] uppercase font-bold tracking-wider border rounded-full px-2.5 py-1 w-max ${
+              activeDesk === "disputes" ? "text-amber-300 bg-amber-500/10 border-amber-500/20" : "text-rose-300 bg-rose-500/10 border-rose-500/20"
+            }`}>
+              {activeDesk === "disputes" ? "Case resolution" : "Content safety"}
             </span>
           </div>
           <p className="text-zinc-500 text-xs mb-5">
-            Audit reported media assets. Remove posts that violate platform guidelines or clear reporting false-positives.
+            {activeDesk === "disputes"
+              ? "Review user reports and resolve each case by removing harmful content or dismissing false reports."
+              : "Audit reported media assets. Remove posts that violate platform guidelines or clear reporting false-positives."}
           </p>
 
           <div className="flex-1 overflow-y-auto space-y-4 max-h-[420px] pr-1">
@@ -297,6 +331,84 @@ export const AdminDashboard: React.FC = () => {
             )}
           </div>
         </div>
+        )}
+
+        {activeDesk === "analytics" && (
+        <div className="min-h-[420px]">
+          <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-cyan-400" />
+              <span>Analytics & Growth</span>
+            </h2>
+            <span className="text-[10px] uppercase font-bold tracking-wider text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 rounded-full px-2.5 py-1 w-max">
+              Live signals
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {growthSignals.map(signal => (
+              <div key={signal.label} className="rounded-xl border border-white/5 bg-white/3 p-4 hover:bg-white/5 transition-all">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">{signal.label}</span>
+                <strong className="mt-2 block text-2xl font-black text-white">{signal.value}</strong>
+                <span className="mt-1 block text-xs text-zinc-500">{signal.detail}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-4">
+            <div className="rounded-xl border border-white/5 bg-white/3 p-5">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                Growth actions
+              </h3>
+              <div className="mt-4 space-y-3">
+                <button type="button" onClick={() => setActiveDesk("verification")} className="w-full rounded-lg border border-purple-500/20 bg-purple-500/10 px-4 py-3 text-left text-xs text-purple-100 hover:bg-purple-500/15 transition-all">
+                  Review {pendingVerifications.length} pending profiles to increase trusted creator and business supply.
+                </button>
+                <button type="button" onClick={() => setActiveDesk("disputes")} className="w-full rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-left text-xs text-amber-100 hover:bg-amber-500/15 transition-all">
+                  Resolve {flaggedPosts.length} open report cases to keep the marketplace healthy.
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/5 bg-white/3 p-5">
+              <h3 className="text-sm font-bold text-white">Content mix</h3>
+              <div className="mt-4 space-y-4 text-xs">
+                <div>
+                  <div className="mb-1 flex justify-between text-zinc-400"><span>Premium</span><span>{premiumPosts.length}</span></div>
+                  <div className="h-2 rounded-full bg-white/5 overflow-hidden"><div className="h-full bg-cyan-400" style={{ width: `${paidShare}%` }} /></div>
+                </div>
+                <div>
+                  <div className="mb-1 flex justify-between text-zinc-400"><span>Public</span><span>{publicPosts.length}</span></div>
+                  <div className="h-2 rounded-full bg-white/5 overflow-hidden"><div className="h-full bg-emerald-400" style={{ width: `${posts.length ? Math.round((publicPosts.length / posts.length) * 100) : 0}%` }} /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        )}
+
+        {activeDesk === "settings" && (
+        <div className="min-h-[420px]">
+          <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <Settings className="w-5 h-5 text-emerald-400" />
+              <span>System Settings</span>
+            </h2>
+            <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1 w-max">
+              Controls
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {["5% platform commission", "Manual profile verification", "Content report review", "Escrow payout audit", "Admin moderation logs"].map(setting => (
+              <div key={setting} className="rounded-xl border border-white/5 bg-white/3 p-4 flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-white">{setting}</span>
+                <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase text-emerald-300">Active</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        )}
       </div>
     </div>
   );

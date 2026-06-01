@@ -14,13 +14,14 @@ import {
   CheckSquare,
   Heart,
   Settings,
-  ShieldAlert
+  ShieldAlert,
+  X
 } from "lucide-react";
 
 import { usePathname, useRouter } from "next/navigation";
 
 export const Sidebar: React.FC = () => {
-  const { activeRole, activeTab, setActiveTab } = useApp();
+  const { activeRole, activeTab, setActiveTab, isMobileMenuOpen, setMobileMenuOpen } = useApp();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -111,13 +112,36 @@ export const Sidebar: React.FC = () => {
 
   const handleTabClick = (id: Tab) => {
     setActiveTab(id);
+    setMobileMenuOpen(false); // Close drawer on mobile after clicking
     if (pathname !== "/") {
       router.push("/");
     }
   };
 
   return (
-    <aside className="w-64 glass-panel border-r border-white/5 flex flex-col py-8 px-4 h-[calc(100vh-73px)] sticky top-[73px] shrink-0 hidden md:flex z-40">
+    <>
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+      
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 glass-panel border-r border-white/5 flex flex-col py-6 px-4
+        transform transition-transform duration-300 ease-in-out h-screen md:h-[calc(100vh-73px)] md:sticky md:top-[73px]
+        ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+      `}>
+        {/* Mobile Close Button */}
+        <div className="flex justify-end mb-4 md:hidden">
+          <button 
+            onClick={() => setMobileMenuOpen(false)}
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-all"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       <div className="flex flex-col gap-1.5">
         {navItems.map(item => {
           // Edge case check for Admin tabs
@@ -144,5 +168,6 @@ export const Sidebar: React.FC = () => {
 
       {renderSidebarCard()}
     </aside>
+    </>
   );
 };

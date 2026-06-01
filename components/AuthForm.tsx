@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import { ArrowRight, Briefcase, CheckCircle2, Heart, Lock, Mail, Phone, Shield, Sparkles, User, X } from "lucide-react";
 import { Role, useApp } from "@/context/AppContext";
+import { requestPasswordResetWithApi, resetPasswordWithApi } from "@/lib/authApi";
 
 type AccountRole = Exclude<Role, "landing">;
 type AuthMode = "login" | "register";
@@ -40,6 +41,7 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [resetMessage, setResetMessage] = useState('');
+  const [isResetSubmitting, setIsResetSubmitting] = useState(false);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [verificationCode, setVerificationCode] = useState("");
   const [verificationMessage, setVerificationMessage] = useState("");
@@ -105,6 +107,68 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
     }
   };
 
+  const handleRequestPasswordReset = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setResetMessage("");
+    setIsResetSubmitting(true);
+
+    try {
+      const result = await requestPasswordResetWithApi(forgotEmail);
+      setResetMessage(`${result.message} Enter the code to choose a new password.`);
+      setForgotStep("verify");
+    } catch (error) {
+      setResetMessage(error instanceof Error ? error.message : "Could not send reset code. Please try again.");
+    } finally {
+      setIsResetSubmitting(false);
+    }
+  };
+
+  const handleResetPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setResetMessage("");
+
+    if (resetCode.trim().length !== 6) {
+      setResetMessage("Enter the 6-digit code from your email.");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setResetMessage("Password must be at least 8 characters.");
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setResetMessage("Passwords do not match.");
+      return;
+    }
+
+    setIsResetSubmitting(true);
+
+    try {
+      const result = await resetPasswordWithApi({
+        email: forgotEmail,
+        otp: resetCode,
+        password: newPassword,
+      });
+
+      setResetMessage(`${result.message} You can now log in.`);
+      setEmail(forgotEmail.trim().toLowerCase());
+      window.setTimeout(() => {
+        setShowForgot(false);
+        setForgotStep('email');
+        setForgotEmail('');
+        setResetCode('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+        setResetMessage('');
+      }, 1200);
+    } catch (error) {
+      setResetMessage(error instanceof Error ? error.message : "Could not reset password. Please try again.");
+    } finally {
+      setIsResetSubmitting(false);
+    }
+  };
+
   const isRegister = mode === "register";
 
   return (
@@ -150,10 +214,7 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
           {/* Login form or Forgot password flow */}
           {showForgot ? (
             forgotStep === 'email' ? (
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                setResetMessage('Password reset is not connected to the backend yet.');
-              }} className="space-y-5">
+              <form onSubmit={handleRequestPasswordReset} className="space-y-5">
                 <label className="block">
                   <span className="text-xs font-bold uppercase text-neutral-500">Email address</span>
                   <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
@@ -169,8 +230,8 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
                   </span>
                 </label>
 
-                <button type="submit" className="w-full bg-black text-white py-3 rounded-xl font-bold hover:bg-neutral-800">
-                  Send reset code
+                <button type="submit" disabled={isResetSubmitting} className="w-full bg-black text-white py-3 rounded-xl font-bold hover:bg-neutral-800 disabled:opacity-60">
+                  {isResetSubmitting ? "Sending..." : "Send reset code"}
                 </button>
 
                 {resetMessage && (
@@ -184,38 +245,17 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
                 </button>
               </form>
             ) : (
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                // Placeholder: verify code and reset password logic
-                if (newPassword.length < 6) {
-                  setResetMessage('Password must be at least 6 characters.');
-                  return;
-                }
-                if (newPassword !== confirmNewPassword) {
-                  setResetMessage('Passwords do not match.');
-                  return;
-                }
-                // Simulate successful password reset
-                setResetMessage('Password successfully reset. Redirecting to login...');
-                // Reset flow and return to login after a brief timeout
-                setTimeout(() => {
-                  setShowForgot(false);
-                  setForgotStep('email');
-                  setForgotEmail('');
-                  setResetCode('');
-                  setNewPassword('');
-                  setConfirmNewPassword('');
-                  setResetMessage('');
-                }, 1500);
-              }} className="space-y-5">
+              <form onSubmit={handleResetPassword} className="space-y-5">
                 <label className="block">
                   <span className="text-xs font-bold uppercase text-neutral-500">Verification code</span>
                   <span className="mt-1.5 flex items-center gap-2 border border-neutral-300 rounded-xl px-4 py-3 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
                     <Lock className="w-4 h-4 text-neutral-500" />
                     <input
                       required
+                      inputMode="numeric"
+                      maxLength={6}
                       value={resetCode}
-                      onChange={(e) => setResetCode(e.target.value)}
+                      onChange={(e) => setResetCode(e.target.value.replace(/\D/g, ""))}
                       className="w-full outline-none text-sm"
                       placeholder="Enter code"
                     />
@@ -229,10 +269,11 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
                     <input
                       required
                       type="password"
+                      minLength={8}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       className="w-full outline-none text-sm"
-                      placeholder="New password"
+                      placeholder="Minimum 8 characters"
                     />
                   </span>
                 </label>
@@ -252,8 +293,8 @@ export const AuthForm: React.FC<{ mode: AuthMode }> = ({ mode }) => {
                   </span>
                 </label>
 
-                <button type="submit" className="w-full bg-black text-white py-3 rounded-xl font-bold hover:bg-neutral-800">
-                  Reset password
+                <button type="submit" disabled={isResetSubmitting} className="w-full bg-black text-white py-3 rounded-xl font-bold hover:bg-neutral-800 disabled:opacity-60">
+                  {isResetSubmitting ? "Resetting..." : "Reset password"}
                 </button>
 
                 {resetMessage && (

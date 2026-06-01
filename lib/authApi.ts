@@ -31,6 +31,12 @@ export type VerifyRegistrationPayload = {
   otp: string;
 };
 
+export type ResetPasswordPayload = {
+  email: string;
+  otp: string;
+  password: string;
+};
+
 type ApiErrorBody = {
   error?: string;
   message?: string;
@@ -131,6 +137,36 @@ export const loginWithApi = async (email: string, password: string): Promise<Log
     refreshToken: body.refreshToken,
     userId: decoded.userId,
     role: backendToFrontendRole(decoded.role),
+  };
+};
+
+export const requestPasswordResetWithApi = async (email: string): Promise<AuthResult> => {
+  const body = await requestJson<{ message?: string }>("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({
+      email: email.trim().toLowerCase(),
+    }),
+  });
+
+  return {
+    ok: true,
+    message: body.message ?? "Password reset code sent to your email.",
+  };
+};
+
+export const resetPasswordWithApi = async (payload: ResetPasswordPayload): Promise<AuthResult> => {
+  const body = await requestJson<{ message?: string }>("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({
+      email: payload.email.trim().toLowerCase(),
+      otp: payload.otp.trim(),
+      password: payload.password,
+    }),
+  });
+
+  return {
+    ok: true,
+    message: body.message ?? "Password reset successfully.",
   };
 };
 
