@@ -272,12 +272,13 @@ export const CreatorProfile: React.FC = () => {
   };
 
   // Mock list of Rwandan/East African subscribers for Creator
+  const currentFee = myCreatorProfile.subscriptionFee?.toFixed(2) || "10.00";
   const mockSubscribers = [
-    { name: "Sandra Umutoni", handle: "@sandra_u", date: "May 20, 2026", status: "active", tier: "Gold Fan ($10.00)" },
-    { name: "Eric Kabera", handle: "@eric_k", date: "May 18, 2026", status: "active", tier: "Gold Fan ($10.00)" },
-    { name: "Aline Mukamana", handle: "@aline_m", date: "May 15, 2026", status: "active", tier: "Gold Fan ($10.00)" },
-    { name: "Jean-Claude Nshuti", handle: "@jc_nshuti", date: "May 10, 2026", status: "active", tier: "Gold Fan ($10.00)" },
-    { name: "Grace Mwari", handle: "@grace_m", date: "May 02, 2026", status: "active", tier: "Gold Fan ($10.00)" }
+    { name: "Sandra Umutoni", handle: "@sandra_u", date: "May 20, 2026", expiryDate: "Jun 20, 2026", status: "active", tier: `Gold Fan ($${currentFee})` },
+    { name: "Eric Kabera", handle: "@eric_k", date: "May 18, 2026", expiryDate: "Jun 18, 2026", status: "active", tier: `Gold Fan ($${currentFee})` },
+    { name: "Aline Mukamana", handle: "@aline_m", date: "May 15, 2026", expiryDate: "Jun 15, 2026", status: "active", tier: `Gold Fan ($${currentFee})` },
+    { name: "Jean-Claude Nshuti", handle: "@jc_nshuti", date: "May 10, 2026", expiryDate: "Jun 10, 2026", status: "active", tier: `Gold Fan ($${currentFee})` },
+    { name: "Grace Mwari", handle: "@grace_m", date: "May 02, 2026", expiryDate: "Jun 02, 2026", status: "active", tier: `Gold Fan ($${currentFee})` }
   ];
 
   return (
@@ -664,6 +665,7 @@ export const CreatorProfile: React.FC = () => {
                   <th className="pb-3 pl-4">Subscriber Name</th>
                   <th className="pb-3">Username</th>
                   <th className="pb-3">Subscription Date</th>
+                  <th className="pb-3">Expiry Date</th>
                   <th className="pb-3">Support Tier</th>
                   <th className="pb-3 pr-4 text-center">Status</th>
                 </tr>
@@ -679,6 +681,7 @@ export const CreatorProfile: React.FC = () => {
                     </td>
                     <td className="py-4 font-medium text-zinc-400">{sub.handle}</td>
                     <td className="py-4 text-zinc-400">{sub.date}</td>
+                    <td className="py-4 text-zinc-400">{sub.expiryDate}</td>
                     <td className="py-4 font-bold text-purple-400">{sub.tier}</td>
                     <td className="py-4 pr-4 text-center">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold">
@@ -735,7 +738,7 @@ export const CreatorProfile: React.FC = () => {
                           {creatorObj.verified && <CheckCircle className="w-3.5 h-3.5 text-cyan-400" />}
                         </div>
                         <span className="text-[10px] text-zinc-500 block">{creatorObj.niche}</span>
-                        <span className="text-[10px] text-purple-400 font-semibold block mt-0.5">Contribution: $10.00/mo</span>
+                        <span className="text-[10px] text-purple-400 font-semibold block mt-0.5">Contribution: ${creatorObj.subscriptionFee?.toFixed(2) || "10.00"}/mo</span>
                       </div>
                     </div>
 

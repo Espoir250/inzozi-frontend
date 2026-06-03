@@ -5,12 +5,14 @@ import { useApp, Post, Creator } from "@/context/AppContext";
 import { 
   Heart, 
   MessageSquare, 
+  MessageCircle,
   Lock, 
   CheckCircle, 
   DollarSign, 
   Send, 
   AlertOctagon, 
   ChevronRight,
+  ChevronDown,
   Sparkles,
   Unlock,
   Search,
@@ -56,11 +58,17 @@ export const ViewerFeed: React.FC = () => {
     subscribeToCreator, 
     unlockPremiumPost, 
     tipCreator,
-    flagPost
+    flagPost,
+    startDirectMessage,
+    currentUser,
+    activeRole
   } = useApp();
 
   // State for selected creator to view profile in a modal (fan view)
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
+
+  // State for toggling creator list dropdown
+  const [isCreatorListOpen, setIsCreatorListOpen] = useState(false);
 
   // Local state for tracking subscribed creators in this browser session
   const [subscribedIds, setSubscribedIds] = useState<string[]>(() => {
@@ -240,12 +248,12 @@ export const ViewerFeed: React.FC = () => {
 
                           <div className="z-10 w-full max-w-[200px]">
                             {post.visibility === "subscriber" ? (
-                              <button
-                                onClick={() => handleSubscribe(post.creatorId)}
-                                className="w-full py-2 rounded-xl bg-gradient-brand text-white font-bold text-xs shadow-md transition-all hover:scale-102"
-                              >
-                                Subscribe ($10.00/mo)
-                              </button>
+                                <button
+                                  onClick={() => handleSubscribe(post.creatorId)}
+                                  className="w-full py-2 rounded-xl bg-gradient-brand text-white font-bold text-xs shadow-md transition-all hover:scale-102"
+                                >
+                                  Subscribe (${creatorObj?.subscriptionFee?.toFixed(2) || "10.00"}/mo)
+                                </button>
                             ) : (
                               <button
                                 onClick={() => handleUnlockPost(post.id)}
@@ -346,64 +354,75 @@ export const ViewerFeed: React.FC = () => {
         </div>
 
         {/* Creator support Sidebar */}
-        <div className="space-y-6">
-          <div className="glass-panel p-6 rounded-2xl border border-white/5">
-            <h2 className="text-sm font-bold text-white mb-4">Support Local Talent</h2>
-            <div className="space-y-3 mb-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
-                <input
-                  value={creatorSearch}
-                  onChange={(e) => setCreatorSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 rounded-xl glass-input text-xs"
-                  placeholder="Search creators..."
-                />
-              </div>
-              <select
-                value={creatorNicheFilter}
-                onChange={(e) => setCreatorNicheFilter(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl glass-input text-xs"
-              >
-                <option value="all">All Niches</option>
-                {creatorNicheOptions.map(niche => (
-                  <option key={niche} value={niche}>{niche}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-4">
-              {filteredCreators.length === 0 ? (
-                <div className="text-center py-6 text-zinc-500 text-xs">
-                  No creators match your search.
-                </div>
-              ) : filteredCreators.map(creator => (
-                <div key={creator.id} className="flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <ProfileAvatar avatar={creator.avatar} name={creator.name} className="w-9 h-9 rounded-xl text-xl" />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1">
-                        <button className="flex items-center gap-1 font-bold text-xs text-white truncate hover:underline" onClick={() => setSelectedCreator(creator)}>
-                          <h4 className="text-xs text-white truncate">{creator.name}</h4>
-                          {creator.verified && <CheckCircle className="w-3 h-3 text-cyan-400 shrink-0" />}
-                        </button>
-                      </div>
-                      <span className="text-[10px] text-zinc-500 block truncate">{creator.niche}</span>
-                      <span className="text-[10px] text-zinc-500 flex items-center gap-1 truncate">
-                        <MapPin className="w-3 h-3 shrink-0" />
-                        {creator.location}
-                      </span>
-                    </div>
+        <div className="space-y-6 relative">
+          <div className="glass-panel p-6 rounded-2xl border border-white/5 relative z-40">
+            <button 
+              onClick={() => setIsCreatorListOpen(!isCreatorListOpen)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <h2 className="text-sm font-bold text-white">Support Local Talent</h2>
+              <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${isCreatorListOpen ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {isCreatorListOpen && (
+              <div className="mt-4 absolute left-0 right-0 top-full glass-panel p-4 rounded-2xl shadow-2xl border border-white/10 z-50 bg-[#121212] md:relative md:top-auto md:p-0 md:bg-transparent md:border-none md:shadow-none">
+                <div className="space-y-3 mb-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
+                    <input
+                      value={creatorSearch}
+                      onChange={(e) => setCreatorSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-2 rounded-xl glass-input text-xs"
+                      placeholder="Search creators..."
+                    />
                   </div>
-
-                  <button
-                    onClick={() => setTippingCreator(creator)}
-                    className="px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400 font-bold text-[10px] transition-all flex items-center gap-1 shrink-0"
+                  <select
+                    value={creatorNicheFilter}
+                    onChange={(e) => setCreatorNicheFilter(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl glass-input text-xs"
                   >
-                    <span>Tip</span>
-                    <ChevronRight className="w-3 h-3" />
-                  </button>
+                    <option value="all">All Niches</option>
+                    {creatorNicheOptions.map(niche => (
+                      <option key={niche} value={niche}>{niche}</option>
+                    ))}
+                  </select>
                 </div>
-              ))}
-            </div>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                  {filteredCreators.length === 0 ? (
+                    <div className="text-center py-6 text-zinc-500 text-xs">
+                      No creators match your search.
+                    </div>
+                  ) : filteredCreators.map(creator => (
+                    <div key={creator.id} className="flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ProfileAvatar avatar={creator.avatar} name={creator.name} className="w-9 h-9 rounded-xl text-xl" />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1">
+                            <button className="flex items-center gap-1 font-bold text-xs text-white truncate hover:underline" onClick={() => setSelectedCreator(creator)}>
+                              <h4 className="text-xs text-white truncate">{creator.name}</h4>
+                              {creator.verified && <CheckCircle className="w-3 h-3 text-cyan-400 shrink-0" />}
+                            </button>
+                          </div>
+                          <span className="text-[10px] text-zinc-500 block truncate">{creator.niche}</span>
+                          <span className="text-[10px] text-zinc-500 flex items-center gap-1 truncate">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            {creator.location}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => setTippingCreator(creator)}
+                        className="px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400 font-bold text-[10px] transition-all flex items-center gap-1 shrink-0"
+                      >
+                        <span>Tip</span>
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -550,7 +569,23 @@ export const ViewerFeed: React.FC = () => {
             </div>
             <p className="text-sm text-zinc-300 mb-2"><strong>Location:</strong> {selectedCreator.location}</p>
             <p className="text-sm text-zinc-300 mb-2"><strong>Contact:</strong> {selectedCreator.contact}</p>
-            <p className="text-sm text-zinc-300"><strong>Bio:</strong> {selectedCreator.bio}</p>
+            <p className="text-sm text-zinc-300 mb-6"><strong>Bio:</strong> {selectedCreator.bio}</p>
+            
+            {activeRole === "fan" && (
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    startDirectMessage(selectedCreator.id);
+                    setSelectedCreator(null);
+                    alert("Direct Message chat created. Switch to Messages tab to view.");
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Message Creator</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

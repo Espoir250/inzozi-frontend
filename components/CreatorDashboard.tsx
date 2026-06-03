@@ -39,7 +39,7 @@ export const CreatorDashboard: React.FC = () => {
   const [publishError, setPublishError] = useState("");
 
   // Settings states
-  const [subFee, setSubFee] = useState("10.00");
+  const [subFee, setSubFee] = useState(myProfile.subscriptionFee?.toFixed(2) || "10.00");
   const [showSettingsSaved, setShowSettingsSaved] = useState(false);
 
   // Post Metrics state
@@ -85,7 +85,13 @@ export const CreatorDashboard: React.FC = () => {
     }
   };
 
-  const handleSaveSettings = () => {
+  const { updateCreatorProfile } = useApp();
+
+  const handleSaveSettings = async () => {
+    await updateCreatorProfile(myProfile.id, {
+      name: myProfile.name,
+      subscriptionFee: parseFloat(subFee)
+    });
     setShowSettingsSaved(true);
     setTimeout(() => setShowSettingsSaved(false), 2000);
   };
@@ -121,7 +127,7 @@ export const CreatorDashboard: React.FC = () => {
           <div>
             <span className="text-zinc-500 text-xs font-semibold uppercase">My Subscribers</span>
             <span className="block text-2xl font-extrabold text-white mt-1">{myProfile.subscribersCount}</span>
-            <span className="text-[10px] text-purple-400 font-medium mt-1 block">Avg. monthly fee: $10.00</span>
+            <span className="text-[10px] text-purple-400 font-medium mt-1 block">Avg. monthly fee: ${myProfile.subscriptionFee?.toFixed(2) || "10.00"}</span>
           </div>
           <div className="w-12 h-12 bg-purple-500/10 border border-purple-500/25 rounded-xl flex items-center justify-center text-purple-400">
             <Users className="w-6 h-6" />

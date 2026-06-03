@@ -1,154 +1,262 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
-import { 
-  Send, 
-  Briefcase, 
-  Check, 
-  X, 
-  MessageSquare, 
-  ShieldCheck, 
+import {
+  Send,
+  Briefcase,
+  Check,
+  X,
+  MessageSquare,
+  ShieldCheck,
   DollarSign,
-  AlertCircle
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 
-const generateMsgId = () => "msg_" + Math.random().toString(36).substring(2, 9) + "_" + Date.now();
-
 export const MessagingPanel: React.FC = () => {
-  const { 
-    activeRole, 
-    proposals, 
+  const {
+    activeRole,
+    proposals,
+    directMessages,
+    sendMessageToProposal,
+    sendMessageToDirectMessage,
     respondToProposal,
     creators,
     businesses,
     currentUser,
-    addNotification
+    addNotification,
+    refreshDirectMessages,
   } = useApp();
 
-  const [activeProposalId, setActiveProposalId] = useState<string>(
-    proposals.length > 0 ? proposals[0].id : ""
-  );
-
   const [chatInput, setChatInput] = useState("");
+  const [activeConversationId, setActiveConversationId] = useState<string>("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const currentProposal = proposals.find(p => p.id === activeProposalId);
+  // ─── Build unified conversation list ──────────────────────────────────────
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim() || !currentProposal) return;
+  const visibleConversations = React.useMemo(() => {
+    if (!currentUser) return [];
 
-    // Simulate sending message by pushing to proposal message list
-    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const sender = currentUser ? (currentUser.fullName || currentUser.id) : (activeRole === "business" ? currentProposal.businessName : currentProposal.creatorName);
-    
-    currentProposal.messages.push({
-      id: generateMsgId(),
-      sender,
-      text: chatInput.trim(),
-      timestamp
+    const convos: any[] = [];
+
+    // Proposal threads (business ↔ creator)
+    proposals.forEach((p) => {
+      if (p.creatorId !== currentUser.id && p.businessId !== currentUser.id) return;
+
+      const isBusiness = activeRole === "business";
+      const partnerName = isBusiness ? p.creatorName : p.businessName;
+      const partnerAvatar = isBusiness
+        ? creators.find((c) => c.id === p.creatorId)?.avatar ?? "👤"
+        : businesses.find((b) => b.id === p.businessId)?.logo ?? "🏢";
+
+      convos.push({
+        id: p.id,
+        type: "proposal",
+        title: p.title,
+        partnerName,
+        partnerAvatar,
+        partnerRole: isBusiness ? "Creator" : "Brand",
+        messages: p.messages,
+        originalProposal: p,
+      });
     });
 
-    // Notify the other user (mock logic: we just add a global notification so you can see it)
-    addNotification(`New message from ${sender}: "${chatInput.trim()}"`, "messages");
+    // Direct message threads — sourced from backend via refreshDirectMessages
+    directMessages.forEach((dm) => {
+      if (dm.creatorId !== currentUser.id && dm.fanId !== currentUser.id) return;
 
-    setChatInput("");
-    // Trigger small UI force update by setting active ID
-    setActiveProposalId(currentProposal.id);
-  };
+      const isFan =
+        activeRole === "fan" ||
+        activeRole === "creator" ||
+        activeRole === "business" ||
+        activeRole === "admin";
 
-  const handleProposalAction = (action: "accept" | "decline") => {
-    if (!currentProposal) return;
-    respondToProposal(currentProposal.id, action);
-  };
+      // Determine partner relative to current user
+      const isCurrentUserFan = dm.fanId === currentUser.id;
+      const partnerName = isCurrentUserFan ? dm.creatorName : dm.fanName;
+      const partnerId = isCurrentUserFan ? dm.creatorId : dm.fanId;
+      const partnerRole = dm.participantRole ?? (isCurrentUserFan ? "Creator" : "Fan");
 
-  // Filter threads based on the current user
-  const visibleProposals = proposals.filter(p => {
-    if (!currentUser) return false;
-    // Show if the user is either the creator or the business side of the chat
-    return p.creatorId === currentUser.id || p.businessId === currentUser.id;
-  });
+      // Try to find avatar from creators/businesses list, fallback to stored avatar
+      const creatorMatch = creators.find((c) => c.id === partnerId);
+      const businessMatch = businesses.find((b) => b.id === partnerId);
+      const partnerAvatar =
+        dm.participantAvatar ??
+        creatorMatch?.avatar ??
+        businessMatch?.logo ??
+        "👤";
 
-  // Helper to get partner info
-  const getPartnerInfo = (proposal: any) => {
-    if (activeRole === "business") {
-      const creator = creators.find(c => c.id === proposal.creatorId);
-      return {
-        name: proposal.creatorName,
-        avatar: creator ? creator.avatar : "👤",
-        role: "Creator"
-      };
+      convos.push({
+        id: dm.id,
+        type: "dm",
+        title: "Direct Message",
+        partnerName,
+        partnerAvatar,
+        partnerRole,
+        messages: dm.messages,
+        originalDM: dm,
+      });
+    });
+
+    return convos;
+  }, [proposals, directMessages, currentUser, activeRole, creators, businesses]);
+
+  // Auto-select first conversation
+  useEffect(() => {
+    if (visibleConversations.length > 0 && !activeConversationId) {
+      setActiveConversationId(visibleConversations[0].id);
+    }
+  }, [visibleConversations, activeConversationId]);
+
+  // If active conversation disappears (e.g. after refresh), reset to first
+  useEffect(() => {
+    const exists = visibleConversations.some((c) => c.id === activeConversationId);
+    if (!exists && visibleConversations.length > 0) {
+      setActiveConversationId(visibleConversations[0].id);
+    }
+  }, [visibleConversations, activeConversationId]);
+
+  // Scroll to latest message when thread changes or new message arrives
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activeConversationId, visibleConversations]);
+
+  const currentConversation = visibleConversations.find(
+    (c) => c.id === activeConversationId
+  );
+
+  // ─── Send message ──────────────────────────────────────────────────────────
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !currentConversation) return;
+
+    let sent = false;
+    if (currentConversation.type === "proposal") {
+      sent = await sendMessageToProposal(currentConversation.id, chatInput.trim());
     } else {
-      const business = businesses.find(b => b.id === proposal.businessId);
-      return {
-        name: proposal.businessName,
-        avatar: business && business.logo ? business.logo : "🏢",
-        role: "Brand"
-      };
+      sent = await sendMessageToDirectMessage(currentConversation.id, chatInput.trim());
+    }
+
+    if (sent) {
+      setChatInput("");
     }
   };
 
+  const handleProposalAction = (action: "accept" | "decline") => {
+    if (!currentConversation || currentConversation.type !== "proposal") return;
+    respondToProposal(currentConversation.id, action);
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await refreshDirectMessages();
+    setIsRefreshing(false);
+  };
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  const isMyMessage = (msg: any) => {
+    if (!currentUser) return false;
+    // Prefer senderId comparison (reliable), fall back to name match
+    if (msg.senderId) return msg.senderId === currentUser.id;
+    const myName = currentUser.fullName || currentUser.id;
+    return msg.sender === myName;
+  };
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+
   return (
     <div className="flex-1 flex max-w-[1200px] mx-auto w-full border border-gray-200 rounded-2xl bg-white overflow-hidden h-[calc(100vh-140px)] sticky top-[90px] shadow-sm">
-      
-      {/* 1. Chat pane (Left Side - swapped) */}
+
+      {/* ── Chat pane (left) ── */}
       <div className="flex-1 flex flex-col border-r border-gray-200 bg-white">
-        {currentProposal ? (
+        {currentConversation ? (
           <>
-            {/* Active Partner Header */}
+            {/* Header */}
             <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-full bg-zinc-900 flex items-center justify-center text-xl text-white border border-gray-200">
-                  {getPartnerInfo(currentProposal).avatar}
+                <div className="w-11 h-11 rounded-full bg-zinc-900 flex items-center justify-center text-xl text-white border border-gray-200 overflow-hidden">
+                  {currentConversation.partnerAvatar?.startsWith("http") ? (
+                    <img
+                      src={currentConversation.partnerAvatar}
+                      alt={currentConversation.partnerName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    currentConversation.partnerAvatar
+                  )}
                 </div>
                 <div>
                   <span className="font-bold text-sm text-black flex items-center gap-2">
-                    {getPartnerInfo(currentProposal).name}
+                    {currentConversation.partnerName}
                     <span className="text-[10px] font-medium px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full">
-                      {getPartnerInfo(currentProposal).role}
+                      {currentConversation.partnerRole}
                     </span>
                   </span>
                   <span className="text-[11px] text-gray-500 block mt-0.5">
-                    Discussion on: <strong className="text-gray-700">{currentProposal.title}</strong>
+                    Discussion on:{" "}
+                    <strong className="text-gray-700">{currentConversation.title}</strong>
                   </span>
                 </div>
               </div>
-              <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-bold bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
-                <DollarSign className="w-4 h-4" />
-                <span>Escrow Vault: ${currentProposal.budget.toFixed(2)}</span>
-              </span>
+              {currentConversation.type === "proposal" && currentConversation.originalProposal && (
+                <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-bold bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                  <DollarSign className="w-4 h-4" />
+                  <span>
+                    Escrow: ${currentConversation.originalProposal.budget.toFixed(2)}
+                  </span>
+                </span>
+              )}
             </div>
 
-            {/* Messages ledger scroll area */}
+            {/* Messages */}
             <div className="flex-1 p-6 overflow-y-auto space-y-4">
-              {currentProposal.messages.map(msg => {
-                const myName = activeRole === "business" ? currentProposal.businessName : currentProposal.creatorName;
-                const isMe = msg.sender === myName;
-
-                return (
-                  <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[70%] rounded-2xl p-3.5 text-sm leading-relaxed ${
-                      isMe 
-                        ? "bg-blue-600 text-white rounded-br-none shadow-sm" 
-                        : "bg-gray-100 border border-gray-200 text-black rounded-bl-none"
-                    }`}>
-                      {!isMe && (
-                        <span className="block font-semibold text-[11px] text-gray-500 mb-1">
-                          {msg.sender}
+              {currentConversation.messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2">
+                  <MessageSquare className="w-8 h-8 text-gray-300" />
+                  <p>No messages yet. Say hello!</p>
+                </div>
+              ) : (
+                currentConversation.messages.map((msg: any) => {
+                  const mine = isMyMessage(msg);
+                  return (
+                    <div key={msg.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[70%] rounded-2xl p-3.5 text-sm leading-relaxed ${
+                          mine
+                            ? "bg-blue-600 text-white rounded-br-none shadow-sm"
+                            : "bg-gray-100 border border-gray-200 text-black rounded-bl-none"
+                        }`}
+                      >
+                        {!mine && (
+                          <span className="block font-semibold text-[11px] text-gray-500 mb-1">
+                            {msg.sender}
+                          </span>
+                        )}
+                        <p>{msg.text}</p>
+                        <span
+                          className={`block text-[10px] mt-2 text-right ${
+                            mine ? "text-blue-200" : "text-gray-400"
+                          }`}
+                        >
+                          {msg.timestamp}
                         </span>
-                      )}
-                      <p>{msg.text}</p>
-                      <span className={`block text-[10px] mt-2 text-right ${isMe ? "text-blue-200" : "text-gray-400"}`}>
-                        {msg.timestamp}
-                      </span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
+              <div ref={messagesEndRef} />
             </div>
 
-            {/* Chat box message draft input */}
-            <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-200 flex gap-3 bg-gray-50">
+            {/* Input */}
+            <form
+              onSubmit={handleSendMessage}
+              className="p-4 border-t border-gray-200 flex gap-3 bg-gray-50"
+            >
               <input
                 type="text"
                 placeholder="Type your message here..."
@@ -167,55 +275,121 @@ export const MessagingPanel: React.FC = () => {
             </form>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 text-sm">
-            <MessageSquare className="w-12 h-12 text-gray-300 mb-4" />
-            <p>Select a conversation thread to review deliverables and chat history.</p>
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 text-sm gap-3">
+            <MessageSquare className="w-12 h-12 text-gray-300" />
+            <p>Select a conversation to start chatting.</p>
+            {currentUser && (
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshing ? "animate-spin" : ""}`} />
+                {isRefreshing ? "Loading..." : "Refresh conversations"}
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* 2. Threads list sidebar (Right Side - swapped) */}
+      {/* ── Sidebar (right) ── */}
       <div className="w-80 flex flex-col bg-gray-50">
-        <div className="p-4 border-b border-gray-200 flex items-center gap-2 bg-white">
-          <MessageSquare className="w-5 h-5 text-blue-600" />
-          <h2 className="font-bold text-black text-sm">Other Conversations</h2>
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-white">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-blue-600" />
+            <h2 className="font-bold text-black text-sm">Conversations</h2>
+            {visibleConversations.length > 0 && (
+              <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                {visibleConversations.length}
+              </span>
+            )}
+          </div>
+          {currentUser && (
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title="Refresh conversations"
+              className="text-gray-400 hover:text-blue-600 transition-colors"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto divide-y divide-gray-200">
-          {visibleProposals.length === 0 ? (
-            <div className="text-center py-8 text-gray-500 text-xs px-4">
-              No active threads. Brands can initiate chats by offering sponsorships.
+          {visibleConversations.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 text-xs px-4 space-y-3">
+              <MessageSquare className="w-8 h-8 text-gray-300 mx-auto" />
+              <p>No conversations yet.</p>
+              {currentUser && (
+                <button
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="flex items-center gap-1.5 text-xs text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg mx-auto"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isRefreshing ? "animate-spin" : ""}`} />
+                  {isRefreshing ? "Loading..." : "Load conversations"}
+                </button>
+              )}
             </div>
           ) : (
-            visibleProposals.map(prop => {
-              const partnerInfo = getPartnerInfo(prop);
-              const lastMsg = prop.messages[prop.messages.length - 1];
+            visibleConversations.map((conv) => {
+              const lastMsg = conv.messages[conv.messages.length - 1];
+              const isActive = activeConversationId === conv.id;
+
+              let statusLabel = "Direct";
+              let statusClass = "bg-blue-100 text-blue-700";
+              if (conv.type === "proposal" && conv.originalProposal) {
+                const s = conv.originalProposal.status;
+                statusLabel =
+                  s === "accepted"
+                    ? "accepted"
+                    : s === "declined"
+                    ? "declined"
+                    : "Pending";
+                statusClass =
+                  s === "accepted"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : s === "declined"
+                    ? "bg-rose-100 text-rose-700"
+                    : "bg-amber-100 text-amber-700";
+              }
 
               return (
                 <button
-                  key={prop.id}
-                  onClick={() => setActiveProposalId(prop.id)}
+                  key={conv.id}
+                  onClick={() => setActiveConversationId(conv.id)}
                   className={`w-full text-left p-4 hover:bg-gray-100 transition-all flex flex-col gap-2 ${
-                    activeProposalId === prop.id ? "bg-white border-l-4 border-l-blue-600 shadow-sm" : "border-l-4 border-l-transparent"
+                    isActive
+                      ? "bg-white border-l-4 border-l-blue-600 shadow-sm"
+                      : "border-l-4 border-l-transparent"
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                       <div className="w-8 h-8 rounded-full bg-zinc-900 flex items-center justify-center text-[12px] text-white">
-                         {partnerInfo.avatar}
-                       </div>
-                       <span className="font-bold text-sm text-black truncate max-w-[120px]">{partnerInfo.name}</span>
+                      <div className="w-8 h-8 rounded-full bg-zinc-900 flex items-center justify-center text-[12px] text-white overflow-hidden flex-shrink-0">
+                        {conv.partnerAvatar?.startsWith("http") ? (
+                          <img
+                            src={conv.partnerAvatar}
+                            alt={conv.partnerName}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          conv.partnerAvatar
+                        )}
+                      </div>
+                      <span className="font-bold text-sm text-black truncate max-w-[110px]">
+                        {conv.partnerName}
+                      </span>
                     </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      prop.status === "accepted" ? "bg-emerald-100 text-emerald-700" :
-                      prop.status === "declined" ? "bg-rose-100 text-rose-700" :
-                      "bg-amber-100 text-amber-700"
-                    }`}>
-                      {prop.status === "pending_creator" ? "Pending" : prop.status}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${statusClass}`}>
+                      {statusLabel}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 line-clamp-1 ml-[42px]">
-                    {lastMsg ? `${lastMsg.sender === partnerInfo.name ? partnerInfo.name : 'You'}: ${lastMsg.text}` : "No messages yet"}
+                    {lastMsg
+                      ? `${isMyMessage(lastMsg) ? "You" : lastMsg.sender}: ${lastMsg.text}`
+                      : "No messages yet"}
                   </p>
                 </button>
               );
@@ -223,27 +397,26 @@ export const MessagingPanel: React.FC = () => {
           )}
         </div>
 
-        {/* Negotiations Drawer */}
-        {currentProposal && (
+        {/* Contract details drawer */}
+        {currentConversation?.type === "proposal" && currentConversation.originalProposal && (
           <div className="h-2/5 border-t border-gray-200 p-5 bg-white flex flex-col justify-between overflow-y-auto">
             <div className="space-y-4">
               <h3 className="font-bold text-sm text-black flex items-center gap-2 pb-2 border-b border-gray-200">
                 <Briefcase className="w-4 h-4 text-blue-600" />
                 <span>Contract Details</span>
               </h3>
-
-              <div className="space-y-3">
-                <div>
-                  <span className="text-[11px] text-gray-500 font-bold block uppercase tracking-wide">Deliverables</span>
-                  <p className="text-xs text-gray-700 leading-relaxed mt-1 max-h-24 overflow-y-auto bg-gray-50 p-2.5 rounded-lg border border-gray-200">
-                    {currentProposal.details}
-                  </p>
-                </div>
+              <div>
+                <span className="text-[11px] text-gray-500 font-bold block uppercase tracking-wide">
+                  Deliverables
+                </span>
+                <p className="text-xs text-gray-700 leading-relaxed mt-1 max-h-24 overflow-y-auto bg-gray-50 p-2.5 rounded-lg border border-gray-200">
+                  {currentConversation.originalProposal.details}
+                </p>
               </div>
             </div>
 
             <div className="pt-3 mt-3">
-              {currentProposal.status === "pending_creator" ? (
+              {currentConversation.originalProposal.status === "pending_creator" ? (
                 activeRole === "creator" ? (
                   <div className="space-y-2">
                     <button
@@ -264,16 +437,20 @@ export const MessagingPanel: React.FC = () => {
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                     <div>
                       <span className="font-bold block mb-1">Awaiting Creator Response</span>
-                      <p className="text-[10px] opacity-80 leading-tight">Funds held in secure vault until creator decides.</p>
+                      <p className="text-[10px] opacity-80 leading-tight">
+                        Funds held in secure vault until creator decides.
+                      </p>
                     </div>
                   </div>
                 )
-              ) : currentProposal.status === "accepted" ? (
+              ) : currentConversation.originalProposal.status === "accepted" ? (
                 <div className="p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 flex gap-2.5 text-xs text-emerald-700">
                   <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-bold block mb-1">Contract Active</span>
-                    <p className="text-[10px] opacity-80 leading-tight">Escrow payouts complete. Safe to collaborate.</p>
+                    <p className="text-[10px] opacity-80 leading-tight">
+                      Escrow payout complete. Safe to collaborate.
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -281,7 +458,9 @@ export const MessagingPanel: React.FC = () => {
                   <X className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-bold block mb-1">Declined</span>
-                    <p className="text-[10px] opacity-80 leading-tight">Funds fully refunded to brand wallet.</p>
+                    <p className="text-[10px] opacity-80 leading-tight">
+                      Funds fully refunded to brand wallet.
+                    </p>
                   </div>
                 </div>
               )}
@@ -289,7 +468,6 @@ export const MessagingPanel: React.FC = () => {
           </div>
         )}
       </div>
-
     </div>
   );
 };

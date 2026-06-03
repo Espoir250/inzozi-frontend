@@ -1,25 +1,72 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useApp, Creator } from "@/context/AppContext";
-import { 
-  Search, 
-  CheckCircle, 
-  MapPin, 
-  Activity, 
-  Send, 
-  Briefcase, 
+import {
+  Search,
+  CheckCircle,
+  MapPin,
+  Activity,
+  Send,
+  Briefcase,
   AlertTriangle,
-  Phone
+  Phone,
 } from "lucide-react";
+import { ViewerFeed } from "@/components/ViewerFeed";
+// ---------------------------------------------------------------------------
+// Helper utilities for BusinessDashboard
+// ---------------------------------------------------------------------------
+
+// Format numbers as USD currency
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+};
+
 
 export const BusinessDashboard: React.FC = () => {
-  const { 
-    creators, 
-    businessBalance, 
-    proposals, 
-    launchCampaignProposal 
+  const {
+    creators,
+    businessBalance,
+    proposals,
+    launchCampaignProposal,
+    refreshCreators,
+    refreshPosts,
+    currentUser,
+    businesses,
+    addNotification,
   } = useApp();
+
+  useEffect(() => {
+    // Ensure latest creators and posts are loaded from backend when dashboard mounts
+    refreshCreators();
+    refreshPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const clearDemoData = () => {
+    if (typeof window === "undefined") return;
+    const keys = [
+      "inzozi_currentUser",
+      "inzozi_activeRole",
+      "inzozi_fanBalance",
+      "inzozi_creatorBalance",
+      "inzozi_businessBalance",
+      "inzozi_adminBalance",
+      "inzozi_transactions",
+      "inzozi_proposals",
+      "inzozi_directMessages",
+      "inzozi_notifications",
+      "inzozi_user_profiles",
+      "inzozi_fan_subscriptions",
+    ];
+    keys.forEach((k) => localStorage.removeItem(k));
+    try {
+      sessionStorage.clear();
+    } catch {}
+    refreshCreators();
+    refreshPosts();
+    addNotification?.("Cleared demo localStorage and refreshed backend data.");
+  };
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -29,14 +76,16 @@ export const BusinessDashboard: React.FC = () => {
 
   // Selection state for active collaboration proposal
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
-  
+
   // Collaboration form state
   const [campaignTitle, setCampaignTitle] = useState("");
   const [campaignDetails, setCampaignDetails] = useState("");
   const [campaignBudget, setCampaignBudget] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const [campaignDate, setCampaignDate] = useState('');
-  const nicheOptions = Array.from(new Set(creators.map(creator => creator.niche).filter(Boolean))).sort();
+  const [campaignDate, setCampaignDate] = useState("");
+  const nicheOptions = Array.from(
+    new Set(creators.map((creator) => creator.niche).filter(Boolean)),
+  ).sort();
 
   const handleOpenCollab = (creator: Creator) => {
     setSelectedCreator(creator);
@@ -45,7 +94,7 @@ export const BusinessDashboard: React.FC = () => {
     setErrorMsg("");
   };
 
-  const handleSendProposal = (e: React.FormEvent) => {
+    const handleSendProposal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCreator || !campaignTitle || !campaignDetails || !campaignBudget) return;
 
@@ -54,13 +103,18 @@ export const BusinessDashboard: React.FC = () => {
       setErrorMsg("Please enter a valid budget amount.");
       return;
     }
-
     if (budgetNum > businessBalance) {
-      setErrorMsg(`Insufficient funds in wallet! Your balance is $${businessBalance.toFixed(2)}. Deposit more in the Wallet tab.`);
+      setErrorMsg(
+        `Insufficient funds in wallet! Your balance is ${formatCurrency(businessBalance)}. Deposit more in the Wallet tab.`
+      );
       return;
     }
 
-    launchCampaignProposal(selectedCreator.id, campaignTitle, campaignDetails, budgetNum);
+    // Launch campaign proposal and await completion
+    await launchCampaignProposal(selectedCreator.id, campaignTitle, campaignDetails, budgetNum);
+    // Provide feedback to the user
+    addNotification?.(`Campaign proposal sent to ${selectedCreator.name}.`);
+    // Reset form state
     setSelectedCreator(null);
     setCampaignTitle("");
     setCampaignDetails("");
@@ -71,29 +125,31 @@ export const BusinessDashboard: React.FC = () => {
   const getFollowersValue = (followers: number) => followers;
 
   // Filter creators list
-  const filteredCreators = creators.filter(c => {
+  const filteredCreators = creators.filter((c) => {
     // 1. Search Query
-    const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          c.bio.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          c.niche.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          c.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (c.contact || "").toLowerCase().includes(searchQuery.toLowerCase());
-    
+    const matchesSearch =
+      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.bio.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.niche.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.contact || "").toLowerCase().includes(searchQuery.toLowerCase());
+
     // 2. Niche Filter
-    const matchesNiche = nicheFilter === "all" || 
-                         c.niche === nicheFilter;
+    const matchesNiche = nicheFilter === "all" || c.niche === nicheFilter;
 
     // 3. Size Filter
     const sizeVal = getFollowersValue(c.followers);
     let matchesSize = true;
     if (sizeFilter === "small") matchesSize = sizeVal < 15000;
-    else if (sizeFilter === "medium") matchesSize = sizeVal >= 15000 && sizeVal < 30000;
+    else if (sizeFilter === "medium")
+      matchesSize = sizeVal >= 15000 && sizeVal < 30000;
     else if (sizeFilter === "large") matchesSize = sizeVal >= 30000;
 
     // 4. Verified Filter
-    const matchesVerified = verifiedFilter === "all" || 
-                             (verifiedFilter === "verified" && c.verified) || 
-                             (verifiedFilter === "unverified" && !c.verified);
+    const matchesVerified =
+      verifiedFilter === "all" ||
+      (verifiedFilter === "verified" && c.verified) ||
+      (verifiedFilter === "unverified" && !c.verified);
 
     return matchesSearch && matchesNiche && matchesSize && matchesVerified;
   });
@@ -104,27 +160,67 @@ export const BusinessDashboard: React.FC = () => {
       <div className="glass-panel p-6 rounded-2xl border border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-extrabold text-white">Amani Wear</h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 text-[10px] font-bold border border-cyan-500/20">
-              <CheckCircle className="w-3 h-3" />
-              Verified Brand
-            </span>
+            <h1 className="text-2xl font-extrabold text-white">
+              {(() => {
+                const biz =
+                  businesses.find((b) => b.id === currentUser?.id) ||
+                  businesses[0];
+                return biz?.name ?? currentUser?.fullName ?? "Your Brand";
+              })()}
+            </h1>
+            {(() => {
+              const biz =
+                businesses.find((b) => b.id === currentUser?.id) ||
+                businesses[0];
+              if (!biz) return null;
+              return (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 text-[10px] font-bold border border-cyan-500/20">
+                  <CheckCircle className="w-3 h-3" />
+                  {biz.verified ? "Verified Brand" : "Unverified"}
+                </span>
+              );
+            })()}
           </div>
           <p className="text-zinc-400 text-xs mt-1 max-w-xl">
-            Premium streetwear label based in Kigali. Sponsoring local talent to drive digital and eco-friendly cultural design reach.
+            {(() => {
+              const biz =
+                businesses.find((b) => b.id === currentUser?.id) ||
+                businesses[0];
+              return (
+                biz?.bio ??
+                "Manage your brand profile and collaborate with creators from the directory below."
+              );
+            })()}
           </p>
         </div>
         <div className="bg-white/5 border border-white/10 rounded-xl px-5 py-3 text-right">
-          <span className="text-[10px] text-zinc-500 font-bold uppercase block tracking-wider">Campaign Escrow Budget</span>
-          <span className="text-xl font-black text-white">${businessBalance.toFixed(2)}</span>
+          <span className="text-[10px] text-zinc-500 font-bold uppercase block tracking-wider">
+            Campaign Escrow Budget
+          </span>
+          <span className="text-xl font-black text-white">
+            {formatCurrency(businessBalance)}
+          </span>
         </div>
+        {process.env.NODE_ENV !== "production" && (
+          <div className="mt-3 text-right">
+            <button
+              onClick={clearDemoData}
+              className="text-xs text-zinc-400 underline"
+              title="Remove demo/local storage data and reload backend data"
+            >
+              Clear demo data
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Creator Directory */}
       <div>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <h2 className="text-lg font-bold text-white">Discover & Recruit Creators</h2>
-          
+          <h2 className="text-lg font-bold text-white">
+            Discover & Recruit Creators
+          </h2>
+
           {/* Search Input */}
           <div className="relative md:w-80">
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-500">
@@ -143,21 +239,27 @@ export const BusinessDashboard: React.FC = () => {
         {/* Directory Filters */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div>
-            <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wide">Category Niche</label>
+            <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wide">
+              Category Niche
+            </label>
             <select
               value={nicheFilter}
               onChange={(e) => setNicheFilter(e.target.value)}
               className="w-full px-3 py-2 rounded-xl glass-input text-xs"
             >
               <option value="all">All Niches</option>
-              {nicheOptions.map(niche => (
-                <option key={niche} value={niche}>{niche}</option>
+              {nicheOptions.map((niche) => (
+                <option key={niche} value={niche}>
+                  {niche}
+                </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wide">Audience Size</label>
+            <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wide">
+              Audience Size
+            </label>
             <select
               value={sizeFilter}
               onChange={(e) => setSizeFilter(e.target.value)}
@@ -171,7 +273,9 @@ export const BusinessDashboard: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wide">Verification</label>
+            <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wide">
+              Verification
+            </label>
             <select
               value={verifiedFilter}
               onChange={(e) => setVerifiedFilter(e.target.value)}
@@ -191,9 +295,9 @@ export const BusinessDashboard: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {filteredCreators.map(creator => (
-              <div 
-                key={creator.id} 
+            {filteredCreators.map((creator) => (
+              <div
+                key={creator.id}
                 className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col hover-scale"
               >
                 <div className="flex items-start gap-4 mb-4">
@@ -202,17 +306,25 @@ export const BusinessDashboard: React.FC = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <h3 className="font-bold text-sm text-white truncate">{creator.name}</h3>
-                      {creator.verified && <CheckCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                      <h3 className="font-bold text-sm text-white truncate">
+                        {creator.name}
+                      </h3>
+                      {creator.verified && (
+                        <CheckCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      )}
                     </div>
-                    <span className="text-[10px] text-zinc-400 font-semibold">{creator.niche}</span>
+                    <span className="text-[10px] text-zinc-400 font-semibold">
+                      {creator.niche}
+                    </span>
                     <div className="flex items-center gap-1 text-[10px] text-zinc-500 mt-1">
                       <MapPin className="w-3 h-3" />
                       <span>{creator.location}</span>
                     </div>
                     <div className="flex items-center gap-1 text-[10px] text-zinc-500 mt-1">
                       <Phone className="w-3 h-3" />
-                      <span className="truncate">{creator.contact || "Contact not added"}</span>
+                      <span className="truncate">
+                        {creator.contact || "Contact not added"}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -223,19 +335,29 @@ export const BusinessDashboard: React.FC = () => {
 
                 <div className="grid grid-cols-3 border-y border-white/5 py-3 mb-5 text-center">
                   <div>
-                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase">Followers</span>
-                    <span className="text-xs font-extrabold text-white mt-0.5">{creator.followers}</span>
+                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase">
+                      Followers
+                    </span>
+                    <span className="text-xs font-extrabold text-white mt-0.5">
+                      {creator.followers}
+                    </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase">Engagement</span>
+                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase">
+                      Engagement
+                    </span>
                     <span className="text-xs font-extrabold text-cyan-400 mt-0.5 flex items-center justify-center gap-0.5">
                       <Activity className="w-3 h-3 text-cyan-400" />
                       {creator.engagement}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase">Base Price</span>
-                    <span className="text-xs font-extrabold text-emerald-400 mt-0.5">${creator.collabPrice}</span>
+                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase">
+                      Base Price
+                    </span>
+                    <span className="text-xs font-extrabold text-emerald-400 mt-0.5">
+                                              {formatCurrency(creator.collabPrice)}
+                    </span>
                   </div>
                 </div>
 
@@ -252,6 +374,11 @@ export const BusinessDashboard: React.FC = () => {
         )}
       </div>
 
+      {/* Feed: reuse the shared ViewerFeed UI so businesses see content like fans */}
+      <div>
+        <ViewerFeed />
+      </div>
+
       {/* Collaboration Dialog Drawer Overlay */}
       {selectedCreator && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -261,7 +388,9 @@ export const BusinessDashboard: React.FC = () => {
               <span>Sponsor {selectedCreator.name}</span>
             </h3>
             <p className="text-xs text-zinc-400 mb-5 leading-relaxed">
-              Define the contract terms. Initiating a proposal locks the campaign budget in Inzozi escrow. Funds are paid out only if the creator accepts.
+              Define the contract terms. Initiating a proposal locks the
+              campaign budget in Inzozi escrow. Funds are paid out only if the
+              creator accepts.
             </p>
 
             {errorMsg && (
@@ -273,7 +402,9 @@ export const BusinessDashboard: React.FC = () => {
 
             <form onSubmit={handleSendProposal} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">Campaign Name</label>
+                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">
+                  Campaign Name
+                </label>
                 <input
                   type="text"
                   required
@@ -285,7 +416,9 @@ export const BusinessDashboard: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">Campaign Deliverables / Details</label>
+                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">
+                  Campaign Deliverables / Details
+                </label>
                 <textarea
                   required
                   rows={3}
@@ -294,7 +427,9 @@ export const BusinessDashboard: React.FC = () => {
                   onChange={(e) => setCampaignDetails(e.target.value)}
                   className="w-full px-4 py-2 rounded-xl glass-input text-xs"
                 />
-                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase mt-3">Campaign Date</label>
+                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase mt-3">
+                  Campaign Date
+                </label>
                 <input
                   type="date"
                   value={campaignDate}
@@ -304,7 +439,9 @@ export const BusinessDashboard: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">Escrow Budget ($ USD)</label>
+                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">
+                  Escrow Budget ($ USD)
+                </label>
                 <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
                   <span className="text-xs text-zinc-400 font-bold">$</span>
                   <input
@@ -340,41 +477,66 @@ export const BusinessDashboard: React.FC = () => {
 
       {/* Active Campaign / Proposals Ledger */}
       <div className="glass-panel p-6 rounded-2xl border border-white/5">
-        <h2 className="text-lg font-bold text-white mb-6">Escrow Campaign Registry</h2>
+        <h2 className="text-lg font-bold text-white mb-6">
+          Escrow Campaign Registry
+        </h2>
         {proposals.length === 0 ? (
           <div className="text-center py-12 text-zinc-500 text-sm">
-            No active collaborations drafted. Initiate an offer from the directory above.
+            No active collaborations drafted. Initiate an offer from the
+            directory above.
           </div>
         ) : (
           <div className="space-y-4">
-            {proposals.map(prop => (
-              <div 
-                key={prop.id} 
+            {proposals.map((prop) => (
+              <div
+                key={prop.id}
                 className="p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/8 transition-all flex flex-col md:flex-row justify-between gap-4"
               >
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
-                    <h3 className="font-bold text-sm text-white">{prop.title}</h3>
+                    <h3 className="font-bold text-sm text-white">
+                      {prop.title}
+                    </h3>
                   </div>
-                  <p className="text-zinc-400 text-xs max-w-2xl">{prop.details}</p>
+                  <p className="text-zinc-400 text-xs max-w-2xl">
+                    {prop.details}
+                  </p>
                   <div className="flex items-center gap-4 text-[10px] text-zinc-500">
-                    <span>Creator: <strong className="text-zinc-300">{prop.creatorName}</strong></span>
-                    <span>Budget locked: <strong className="text-emerald-400">${prop.budget}</strong></span>
+                    <span>
+                      Creator:{" "}
+                      <strong className="text-zinc-300">
+                        {prop.creatorName}
+                      </strong>
+                    </span>
+                    <span>
+                      Budget locked:{" "}
+                      <strong className="text-emerald-400">
+                        {formatCurrency(prop.budget)}
+                      </strong>
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex flex-col justify-between items-end shrink-0 gap-3">
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                    prop.status === "accepted" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
-                    prop.status === "declined" ? "bg-rose-500/10 text-rose-400 border border-rose-500/20" :
-                    "bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse"
-                  }`}>
-                    {prop.status === "pending_creator" ? "Awaiting Creator" : prop.status.replace("_", " ")}
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      prop.status === "accepted"
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        : prop.status === "declined"
+                          ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                          : "bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse"
+                    }`}
+                  >
+                    {prop.status === "pending_creator"
+                      ? "Awaiting Creator"
+                      : prop.status.replace("_", " ")}
                   </span>
-                  
+
                   {prop.status === "pending_creator" && (
-                    <span className="text-[9px] text-zinc-500">Funds locked in Escrow vault</span>
+                    <span className="text-[9px] text-zinc-500">
+                      Funds locked in Escrow vault
+                    </span>
                   )}
                 </div>
               </div>

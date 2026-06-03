@@ -49,6 +49,7 @@ export default function CreatorPage({ params }: { params: Promise<{ id: string }
     commentOnPost,
     likePost,
     startChat,
+    startDirectMessage,
     subscribeToCreator,
   } = useApp();
 
@@ -112,6 +113,33 @@ export default function CreatorPage({ params }: { params: Promise<{ id: string }
     localStorage.setItem(key, JSON.stringify(updated));
   };
 
+  const [isMounted, setIsMounted] = useState(false);
+  React.useEffect(() => setIsMounted(true), []);
+  // Render follow button only after mount to avoid SSR mismatch
+  const renderFollowButton = () => {
+    const btn = (
+      <button
+        onClick={handleFollow}
+        className={`inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-black transition-all border ${
+          isFollowing
+            ? "bg-black text-white border-black hover:bg-zinc-900"
+            : "bg-white text-black border-zinc-200 hover:bg-zinc-50"
+        }`}
+      >
+        {isFollowing ? <Check className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+        {isFollowing ? "Following" : "Follow"}
+      </button>
+    );
+    return isMounted ? btn : (
+      <button
+        className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-black transition-all border bg-white text-black border-zinc-200"
+        disabled
+      >
+        <Bell className="h-4 w-4" /> Follow
+      </button>
+    );
+  };
+
   const handleFollow = () => {
     const next = !isFollowing;
     setIsFollowing(next);
@@ -133,7 +161,11 @@ export default function CreatorPage({ params }: { params: Promise<{ id: string }
   };
 
   const handleMessageClick = () => {
-    startChat(creator.id, creator.name);
+    if (activeRole === "fan") {
+      startDirectMessage(creator.id);
+    } else {
+      startChat(creator.id, creator.name);
+    }
     setActiveTab("messages");
     router.push("/");
   };

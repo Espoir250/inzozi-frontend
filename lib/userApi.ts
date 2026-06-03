@@ -39,3 +39,27 @@ export const uploadProfileImageWithApi = async (file: File): Promise<UploadedPro
 
   return response.json();
 };
+
+export type BackendUser = {
+  id: string;
+  name: string;
+  email: string;
+  profileImage?: string | null;
+  role: string;
+  verificationStatus: string;
+};
+
+export const fetchUsersApi = async (): Promise<BackendUser[]> => {
+  const accessToken = getAccessToken();
+  const response = await fetch(`${API_BASE_URL}/users?limit=100`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+  });
+  if (!response.ok) return [];
+  const json = await response.json();
+  return json.data ?? [];
+};
+
+
