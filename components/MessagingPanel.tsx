@@ -27,6 +27,7 @@ export const MessagingPanel: React.FC = () => {
     currentUser,
     addNotification,
     refreshDirectMessages,
+    refreshProposals,
   } = useApp();
 
   const [chatInput, setChatInput] = useState("");
@@ -147,14 +148,23 @@ export const MessagingPanel: React.FC = () => {
 
   const handleProposalAction = (action: "accept" | "decline") => {
     if (!currentConversation || currentConversation.type !== "proposal") return;
-    respondToProposal(currentConversation.id, action);
+    respondToProposal(
+      currentConversation.originalProposal.campaignId,
+      currentConversation.originalProposal.creatorId,
+      action
+    );
   };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await refreshDirectMessages();
+    await Promise.all([refreshDirectMessages(), refreshProposals()]);
     setIsRefreshing(false);
   };
+
+  useEffect(() => {
+    if (!currentUser) return;
+    refreshProposals();
+  }, [currentUser?.id, activeRole]);
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 

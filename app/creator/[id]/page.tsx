@@ -1,6 +1,6 @@
 "use client";
 
-import React, { use, useMemo, useState } from "react";
+import React, { use, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -52,6 +52,7 @@ export default function CreatorPage({ params }: { params: Promise<{ id: string }
     startDirectMessage,
     subscribeToCreator,
     followCreator,
+    refreshCreators,
   } = useApp();
 
   const creator = creators.find(c => c.id === id);
@@ -76,6 +77,10 @@ export default function CreatorPage({ params }: { params: Promise<{ id: string }
   const [isSubscribed, setIsSubscribed] = useState(initialSubscribedState);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [commentText, setCommentText] = useState("");
+
+  useEffect(() => {
+    refreshCreators();
+  }, [id]);
 
   if (!creator) {
     return (

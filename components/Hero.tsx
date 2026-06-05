@@ -116,7 +116,7 @@ export const Hero: React.FC = () => {
       subtitle: "Subscriptions & Direct Tipping",
       desc: "Build recurring revenue with subscribers-only post streams and earn immediate gratuity through responsive digital tip jars. Control content access levels dynamically.",
       stats: "$420 Avg. Monthly Tip Value",
-      image: "/creator_earnings.png",
+      image: "creator_earnings.png",
       tag: "100% Direct",
       icon: <Heart className="w-5 h-5 text-rose-400" />
     },

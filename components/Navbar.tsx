@@ -49,6 +49,7 @@ export const Navbar: React.FC = () => {
     setActiveRole(role);
     setShowRoleSelector(false);
     setActiveTab("dashboard");
+    router.push("/");
   };
 
   const handleProfileOpen = () => {
@@ -81,7 +82,10 @@ export const Navbar: React.FC = () => {
         )}
         <div 
           className="flex items-center gap-2 cursor-pointer"
-          onClick={() => { setActiveRole("landing"); }}
+          onClick={() => {
+            setActiveRole("landing");
+            router.push("/");
+          }}
         >
           <div className="bg-gradient-brand w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20">
             I
@@ -104,7 +108,10 @@ export const Navbar: React.FC = () => {
         {/* Dynamic Wallet Balance */}
         {activeRole !== "landing" && (
           <button 
-            onClick={() => setActiveTab("wallet")}
+            onClick={() => {
+              setActiveTab("wallet");
+              router.push("/");
+            }}
             className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 font-semibold text-sm hover:bg-emerald-500/15 transition-all"
           >
             <Wallet className="w-4 h-4" />

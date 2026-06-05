@@ -104,7 +104,12 @@ export const BusinessDashboard: React.FC = () => {
 
     try {
       setSending(true);
-      await launchCampaignProposal(selectedCreator.id, campaignTitle.trim(), proposalText.trim());
+      await launchCampaignProposal(
+        selectedCreator.id,
+        campaignTitle.trim(),
+        proposalText.trim(),
+        Number.parseFloat(budget) || 10
+      );
       addNotification(`Proposal sent to ${selectedCreator.name}.`);
       setSelectedCreator(null);
       setCampaignTitle("");

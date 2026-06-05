@@ -62,29 +62,21 @@ export type BackendUser = {
   };
 };
 
-export const setCreatorFollowStateApi = async (
-  creatorId: string,
-  following: boolean
-): Promise<{ followers: number; subscribersCount?: number }> => {
+export type BackendCreatorProfile = NonNullable<BackendUser["creatorProfile"]> & {
+  userId: string;
+  subscribersCount?: number;
+};
+
+export const fetchCreatorProfilesApi = async (): Promise<BackendCreatorProfile[]> => {
   const accessToken = getAccessToken();
-
-  if (!accessToken) {
-    throw new Error("Please log in to follow creators.");
-  }
-
-  const response = await fetch(`${API_BASE_URL}/creator-profile/users/${creatorId}/follow`, {
-    method: "PATCH",
+  const response = await fetch(`${API_BASE_URL}/creator-profile?limit=100`, {
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
-    body: JSON.stringify({ following }),
   });
 
-  if (!response.ok) {
-    throw new Error(await getErrorMessage(response));
-  }
-
+  if (!response.ok) return [];
   return response.json();
 };
 
@@ -121,4 +113,3 @@ export const fetchUsersApi = async (): Promise<BackendUser[]> => {
   const json = await response.json();
   return json.data ?? [];
 };
-

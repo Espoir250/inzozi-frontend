@@ -26,8 +26,8 @@ import {
 import {
   uploadProfileImageWithApi,
   fetchUsersApi,
+  fetchCreatorProfilesApi,
   BackendUser,
-  setCreatorFollowStateApi,
   subscribeToCreatorApi,
 } from "@/lib/userApi";
 import {
@@ -131,6 +131,7 @@ export interface Post {
 
 export interface Proposal {
   id: string;
+  campaignId: string;
   businessId: string;
   businessName: string;
   creatorId: string;
@@ -224,6 +225,7 @@ interface AppContextType {
   logoutUser: () => Promise<void>;
   refreshCreators: () => Promise<void>;
   refreshPosts: () => Promise<void>;
+  refreshProposals: () => Promise<void>;
   refreshDirectMessages: () => Promise<void>;
   updateFanProfile: (
     updates: Partial<AuthUser> & { avatarFile?: File }
@@ -265,9 +267,10 @@ interface AppContextType {
   likePost: (postId: string) => void;
   commentOnPost: (postId: string, text: string) => void;
   launchCampaignProposal: (
-    campaignId: string,
     creatorId: string,
-    proposal: string
+    title: string,
+    proposal: string,
+    budget?: number,
   ) => Promise<void>;
   startChat: (partnerId: string, partnerName: string) => void;
   respondToProposal: (
@@ -329,6 +332,7 @@ const saveEngagementStore = (userId: string, store: EngagementStore) => {
 
 const backendUserToCreator = (u: BackendUser): Creator => ({
   id: u.id,
+  profileId: u.creatorProfile?.id,
   name: u.name,
   avatar: u.profileImage ?? "🎨",
   niche: u.creatorProfile?.specialization ?? "Creator",
@@ -516,8 +520,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const refreshCreators = async () => {
     setIsLoadingCreators(true);
     try {
-      const allUsers = await fetchUsersApi();
-      const creatorUsers = allUsers.filter((u) => u.role === "CREATOR");
+      const [allUsers, creatorProfiles] = await Promise.all([
+        fetchUsersApi(),
+        fetchCreatorProfilesApi(),
+      ]);
+      const profilesByUserId = new Map(
+        creatorProfiles.map((profile) => [profile.userId, profile])
+      );
+      const creatorUsers = allUsers
+        .filter((u) => u.role === "CREATOR")
+        .map((u) => ({
+          ...u,
+          creatorProfile: u.creatorProfile ?? profilesByUserId.get(u.id) ?? null,
+          _count: {
+            ...u._count,
+            creatorSubscriptions:
+              u._count?.creatorSubscriptions ??
+              profilesByUserId.get(u.id)?.subscribersCount ??
+              0,
+          },
+        }));
       const businessUsers = allUsers.filter((u) => u.role === "BUSINESS");
       setCreators(creatorUsers.map(backendUserToCreator));
       setBusinesses(businessUsers.map(backendUserToBusiness));
@@ -610,6 +632,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const businessName = businesses.find((b) => b.id === businessId)?.name ?? "Business";
         return {
           id: app.id,
+          campaignId: app.campaignId,
           businessId,
           businessName,
           creatorId: app.creatorId,
@@ -980,19 +1003,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...transactions,
     ]);
     addNotification(`Subscribed successfully to ${creatorName}!`);
-    subscribeToCreatorApi(creatorId)
-      .then((result) => {
-        if (typeof result.subscribersCount === "number") {
-          setCreators((prev) =>
-            prev.map((c) =>
-              c.id === creatorId ? { ...c, subscribersCount: result.subscribersCount! } : c
-            )
-          );
-        } else {
+    if (creator?.profileId) {
+      subscribeToCreatorApi(creatorId)
+        .then((result) => {
+          if (typeof result.subscribersCount === "number") {
+            setCreators((prev) =>
+              prev.map((c) =>
+                c.id === creatorId ? { ...c, subscribersCount: result.subscribersCount! } : c
+              )
+            );
+          } else {
+            refreshCreators();
+          }
+        })
+        .catch(() => {
           refreshCreators();
-        }
-      })
-      .catch((error) => addNotification(error.message ?? "Subscription could not be saved."));
+        });
+    }
     return true;
   };
 
@@ -1005,21 +1032,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
 
-    setCreatorFollowStateApi(creatorId, following)
-      .then((profile) => {
-        setCreators((prev) =>
-          prev.map((c) =>
-            c.id === creatorId
-              ? {
-                  ...c,
-                  followers: profile.followers,
-                  subscribersCount: profile.subscribersCount ?? c.subscribersCount,
-                }
-              : c
-          )
-        );
-      })
-      .catch((error) => addNotification(error.message ?? "Follow could not be saved."));
+    localStorage.setItem(
+      "inzozi_followed_creators",
+      JSON.stringify(
+        following
+          ? Array.from(new Set([
+              ...JSON.parse(localStorage.getItem("inzozi_followed_creators") ?? "[]"),
+              creatorId,
+            ]))
+          : JSON.parse(localStorage.getItem("inzozi_followed_creators") ?? "[]").filter(
+              (id: string) => id !== creatorId
+            )
+      )
+    );
   };
 
   const unlockPremiumPost = (postId: string): boolean => {
@@ -1133,9 +1158,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ---------------------------------------------------------------------------
 
   const launchCampaignProposal = async (
-    campaignId: string,
     creatorId: string,
-    proposal: string
+    title: string,
+    proposal: string,
+    budget = 10
   ): Promise<void> => {
     if (!currentUser) return;
 
@@ -1145,16 +1171,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const creatorName = creators.find((c) => c.id === creatorId)?.name ?? "Creator";
+    const campaignResult = await createCampaignApi({
+      title,
+      description: proposal,
+      budget: Math.max(10, budget),
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      max_creators: 1,
+    });
+
+    if (!campaignResult.ok || !campaignResult.data) {
+      addNotification(campaignResult.message ?? "Could not create campaign offer.");
+      return;
+    }
+
+    const offerResult = await createOfferApi(campaignResult.data.id, creatorId, proposal);
+    if (!offerResult.ok || !offerResult.data) {
+      addNotification(offerResult.message ?? "Could not send campaign offer.");
+      return;
+    }
 
     const newProposal: Proposal = {
-      id: "pr_" + Date.now(),
+      id: offerResult.data.id,
+      campaignId: campaignResult.data.id,
       businessId: currentUser.id,
       businessName: currentUser.fullName || currentUser.id,
       creatorId,
       creatorName,
-      title: campaignId,
+      title: campaignResult.data.title,
       details: proposal,
-      budget: 0,
+      budget: campaignResult.data.budget,
       status: "pending_creator",
       contractCreated: true,
       messages: [
@@ -1174,6 +1220,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     addNotification(`Sent proposal to ${creatorName}.`);
+    await refreshProposals();
   };
 
   // ---------------------------------------------------------------------------
@@ -1462,6 +1509,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         logoutUser,
         refreshCreators,
         refreshPosts,
+        refreshProposals,
         refreshDirectMessages,
         updateFanProfile,
         updateBusinessProfile,
