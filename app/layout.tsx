@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppProvider } from "@/context/AppContext";
 
 export const metadata: Metadata = {
-  title: "Inzozi Market - Your Digital Marketplace",
-  description: "Inzozi Market is a modern digital marketplace platform built with Next.js",
+  title: "InzoziMarket – Dream Creator & Monetization Marketplace",
+  description: "Transforming dreams into economic opportunities. A next-generation platform for content monetization, influencer marketing collaborations, and transparent payment escrow.",
 };
 
 export default function RootLayout({
@@ -12,8 +13,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="antialiased">
-      <body className="min-h-screen bg-background text-foreground font-sans">{children}</body>
+    <html
+      lang="en"
+      className="h-full antialiased"
+    >
+      <body className="min-h-full flex flex-col bg-white text-black relative overflow-x-hidden">
+        <AppProvider>
+          <div className="flex-1 flex flex-col z-10">{children}</div>
+        </AppProvider>
+      </body>
     </html>
   );
 }
