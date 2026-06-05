@@ -1,548 +1,541 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useApp, Creator } from "@/context/AppContext";
-import {
-  Search,
-  CheckCircle,
-  MapPin,
-  Activity,
-  Send,
-  Briefcase,
-  AlertTriangle,
-  Phone,
-} from "lucide-react";
-import { ViewerFeed } from "@/components/ViewerFeed";
-// ---------------------------------------------------------------------------
-// Helper utilities for BusinessDashboard
-// ---------------------------------------------------------------------------
+import React, { useMemo, useState } from "react";
+import { useApp, Creator, Post } from "@/context/AppContext";
+import Link from 'next/link';
+import { Rss, Filter, Heart, MessageSquare, Share2, Users, Briefcase, Wallet as WalletIcon, FileText, ImageIcon, Video, Play, ArrowLeft } from "lucide-react";
 
-// Format numbers as USD currency
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
-};
-
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
 
 export const BusinessDashboard: React.FC = () => {
   const {
-    creators,
-    businessBalance,
-    proposals,
-    launchCampaignProposal,
-    refreshCreators,
-    refreshPosts,
     currentUser,
+    businessBalance,
+    creators,
     businesses,
+    proposals,
+    transactions,
+    notifications,
+    launchCampaignProposal,
     addNotification,
+    activeTab,
+    posts,
   } = useApp();
 
-  useEffect(() => {
-    // Ensure latest creators and posts are loaded from backend when dashboard mounts
-    refreshCreators();
-    refreshPosts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const clearDemoData = () => {
-    if (typeof window === "undefined") return;
-    const keys = [
-      "inzozi_currentUser",
-      "inzozi_activeRole",
-      "inzozi_fanBalance",
-      "inzozi_creatorBalance",
-      "inzozi_businessBalance",
-      "inzozi_adminBalance",
-      "inzozi_transactions",
-      "inzozi_proposals",
-      "inzozi_directMessages",
-      "inzozi_notifications",
-      "inzozi_user_profiles",
-      "inzozi_fan_subscriptions",
-    ];
-    keys.forEach((k) => localStorage.removeItem(k));
-    try {
-      sessionStorage.clear();
-    } catch {}
-    refreshCreators();
-    refreshPosts();
-    addNotification?.("Cleared demo localStorage and refreshed backend data.");
-  };
-
-  // Search & Filter State
-  const [searchQuery, setSearchQuery] = useState("");
-  const [nicheFilter, setNicheFilter] = useState("all");
-  const [sizeFilter, setSizeFilter] = useState("all");
-  const [verifiedFilter, setVerifiedFilter] = useState("all");
-
-  // Selection state for active collaboration proposal
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
-
-  // Collaboration form state
   const [campaignTitle, setCampaignTitle] = useState("");
-  const [campaignDetails, setCampaignDetails] = useState("");
-  const [campaignBudget, setCampaignBudget] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
-  const [campaignDate, setCampaignDate] = useState("");
-  const nicheOptions = Array.from(
-    new Set(creators.map((creator) => creator.niche).filter(Boolean)),
-  ).sort();
+  const [proposalText, setProposalText] = useState("");
+  const [budget, setBudget] = useState("");
+  const [sending, setSending] = useState(false);
 
-  const handleOpenCollab = (creator: Creator) => {
-    setSelectedCreator(creator);
-    setCampaignBudget(creator.collabPrice.toString());
-    setCampaignTitle(`${creator.name} Brand Partnership`);
-    setErrorMsg("");
+  // Content Feed State
+  const [feedFilter, setFeedFilter] = useState<"all" | "public" | "subscriber" | "premium">("all");
+  const [feedNiche, setFeedNiche] = useState<string>("all");
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [playingVideo, setPlayingVideo] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 10;
+
+  const myBusiness = useMemo(() => {
+    return businesses.find((b) => b.id === currentUser?.id) ?? null;
+  }, [businesses, currentUser?.id]);
+
+  const myProposals = useMemo(() => {
+    return proposals.filter((p) => p.businessId === currentUser?.id);
+  }, [proposals, currentUser?.id]);
+
+  // Get all niches for filter
+  const allNiches = creators.map(c => c.niche).filter((niche, index, self) => self.indexOf(niche) === index);
+
+  // Filter posts for feed
+  const feedPosts = posts
+    .filter(p => feedFilter === "all" || p.visibility === feedFilter)
+    .filter(p => feedNiche === "all" || creators.find(c => c.id === p.creatorId)?.niche === feedNiche);
+  const paginatedPosts = feedPosts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const handleLike = (postId: string) => {
+    setLikedPosts(prev => {
+      const newLiked = new Set(prev);
+      if (newLiked.has(postId)) {
+        newLiked.delete(postId);
+      } else {
+        newLiked.add(postId);
+      }
+      return newLiked;
+    });
   };
 
-    const handleSendProposal = async (e: React.FormEvent) => {
+  const toggleVideo = (postId: string) => {
+    setPlayingVideo(playingVideo === postId ? null : postId);
+  };
+
+  const handleSendProposal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCreator || !campaignTitle || !campaignDetails || !campaignBudget) return;
 
-    const budgetNum = parseFloat(campaignBudget);
-    if (isNaN(budgetNum) || budgetNum <= 0) {
-      setErrorMsg("Please enter a valid budget amount.");
-      return;
-    }
-    if (budgetNum > businessBalance) {
-      setErrorMsg(
-        `Insufficient funds in wallet! Your balance is ${formatCurrency(businessBalance)}. Deposit more in the Wallet tab.`
-      );
+    if (!selectedCreator) {
+      addNotification("Please select a creator first.");
       return;
     }
 
-    // Launch campaign proposal and await completion
-    await launchCampaignProposal(selectedCreator.id, campaignTitle, campaignDetails, budgetNum);
-    // Provide feedback to the user
-    addNotification?.(`Campaign proposal sent to ${selectedCreator.name}.`);
-    // Reset form state
-    setSelectedCreator(null);
-    setCampaignTitle("");
-    setCampaignDetails("");
-    setCampaignBudget("");
+    if (!campaignTitle.trim()) {
+      addNotification("Please enter a campaign title.");
+      return;
+    }
+
+    if (!proposalText.trim()) {
+      addNotification("Please write your proposal message.");
+      return;
+    }
+
+    try {
+      setSending(true);
+      await launchCampaignProposal(selectedCreator.id, campaignTitle.trim(), proposalText.trim());
+      addNotification(`Proposal sent to ${selectedCreator.name}.`);
+      setSelectedCreator(null);
+      setCampaignTitle("");
+      setProposalText("");
+      setBudget("");
+    } finally {
+      setSending(false);
+    }
   };
 
-  // Helper: parse follower count to a number value for sorting/filtering
-  const getFollowersValue = (followers: number) => followers;
+  // Render based on activeTab
+  const renderContent = () => {
+    switch (activeTab) {
+      case "dashboard":
+      case "feed":
+        return renderFeed();
+      
+      case "campaigns":
+        return renderCampaigns();
+      
+      case "messages":
+        return renderMessages();
+      
+      case "wallet":
+        return renderWallet();
+      
+      case "profile":
+        return renderProfile();
+      
+      default:
+        return renderFeed();
+    }
+  };
 
-  // Filter creators list
-  const filteredCreators = creators.filter((c) => {
-    // 1. Search Query
-    const matchesSearch =
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.bio.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.niche.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.contact || "").toLowerCase().includes(searchQuery.toLowerCase());
-
-    // 2. Niche Filter
-    const matchesNiche = nicheFilter === "all" || c.niche === nicheFilter;
-
-    // 3. Size Filter
-    const sizeVal = getFollowersValue(c.followers);
-    let matchesSize = true;
-    if (sizeFilter === "small") matchesSize = sizeVal < 15000;
-    else if (sizeFilter === "medium")
-      matchesSize = sizeVal >= 15000 && sizeVal < 30000;
-    else if (sizeFilter === "large") matchesSize = sizeVal >= 30000;
-
-    // 4. Verified Filter
-    const matchesVerified =
-      verifiedFilter === "all" ||
-      (verifiedFilter === "verified" && c.verified) ||
-      (verifiedFilter === "unverified" && !c.verified);
-
-    return matchesSearch && matchesNiche && matchesSize && matchesVerified;
-  });
-
-  return (
-    <div className="flex-1 space-y-8 p-6 md:p-10 max-w-5xl mx-auto w-full">
-      {/* Brand Profile Overview */}
-      <div className="glass-panel p-6 rounded-2xl border border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-extrabold text-white">
-              {(() => {
-                const biz =
-                  businesses.find((b) => b.id === currentUser?.id) ||
-                  businesses[0];
-                return biz?.name ?? currentUser?.fullName ?? "Your Brand";
-              })()}
+  const renderFeed = () => (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="glass-panel rounded-2xl p-5">
+        <div className="flex flex-col gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gradient-brand">
+              {myBusiness?.name || currentUser?.fullName || "Business Hub"}
             </h1>
-            {(() => {
-              const biz =
-                businesses.find((b) => b.id === currentUser?.id) ||
-                businesses[0];
-              if (!biz) return null;
-              return (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 text-[10px] font-bold border border-cyan-500/20">
-                  <CheckCircle className="w-3 h-3" />
-                  {biz.verified ? "Verified Brand" : "Unverified"}
-                </span>
-              );
-            })()}
+            <p className="mt-1 text-sm text-zinc-400">
+              Discover content from creators across the platform.
+            </p>
           </div>
-          <p className="text-zinc-400 text-xs mt-1 max-w-xl">
-            {(() => {
-              const biz =
-                businesses.find((b) => b.id === currentUser?.id) ||
-                businesses[0];
-              return (
-                biz?.bio ??
-                "Manage your brand profile and collaborate with creators from the directory below."
-              );
-            })()}
-          </p>
-        </div>
-        <div className="bg-white/5 border border-white/10 rounded-xl px-5 py-3 text-right">
-          <span className="text-[10px] text-zinc-500 font-bold uppercase block tracking-wider">
-            Campaign Escrow Budget
-          </span>
-          <span className="text-xl font-black text-white">
-            {formatCurrency(businessBalance)}
-          </span>
-        </div>
-        {process.env.NODE_ENV !== "production" && (
-          <div className="mt-3 text-right">
-            <button
-              onClick={clearDemoData}
-              className="text-xs text-zinc-400 underline"
-              title="Remove demo/local storage data and reload backend data"
-            >
-              Clear demo data
-            </button>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span className="text-xs text-emerald-400 font-semibold">Wallet: {formatCurrency(businessBalance ?? 0)}</span>
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Main Creator Directory */}
-      <div>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <h2 className="text-lg font-bold text-white">
-            Discover & Recruit Creators
-          </h2>
-
-          {/* Search Input */}
-          <div className="relative md:w-80">
-            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-500">
-              <Search className="w-4 h-4" />
-            </span>
-            <input
-              type="text"
-              placeholder="Search by name, niche, bio..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 rounded-xl glass-input text-xs"
-            />
+      {/* Feed Filters */}
+      <div className="glass-panel rounded-2xl p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Rss className="w-5 h-5 text-cyan-400" />
+            <h2 className="text-base font-bold text-white">Creator Content Feed</h2>
           </div>
-        </div>
-
-        {/* Directory Filters */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div>
-            <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wide">
-              Category Niche
-            </label>
+          
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-zinc-500" />
             <select
-              value={nicheFilter}
-              onChange={(e) => setNicheFilter(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl glass-input text-xs"
+              value={feedFilter}
+              onChange={(e) => setFeedFilter(e.target.value as "all" | "public" | "subscriber" | "premium")}
+              className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-zinc-300 focus:outline-none focus:border-cyan-500/50"
+            >
+              <option value="all">All Content</option>
+              <option value="public">Public Only</option>
+              <option value="subscriber">Subscribers Only</option>
+              <option value="premium">Premium Only</option>
+            </select>
+            
+            <select
+              value={feedNiche}
+              onChange={(e) => setFeedNiche(e.target.value)}
+              className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-zinc-300 focus:outline-none focus:border-cyan-500/50"
             >
               <option value="all">All Niches</option>
-              {nicheOptions.map((niche) => (
-                <option key={niche} value={niche}>
-                  {niche}
-                </option>
+              {allNiches.map(niche => (
+                <option key={niche} value={niche}>{niche}</option>
               ))}
             </select>
           </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wide">
-              Audience Size
-            </label>
-            <select
-              value={sizeFilter}
-              onChange={(e) => setSizeFilter(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl glass-input text-xs"
-            >
-              <option value="all">All Sizes</option>
-              <option value="small">Nano-Influencers (&lt;15K)</option>
-              <option value="medium">Micro-Influencers (15K-30K)</option>
-              <option value="large">Macro-Influencers (30K+)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase tracking-wide">
-              Verification
-            </label>
-            <select
-              value={verifiedFilter}
-              onChange={(e) => setVerifiedFilter(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl glass-input text-xs"
-            >
-              <option value="all">All Statuses</option>
-              <option value="verified">Verified Only</option>
-              <option value="unverified">Unverified Only</option>
-            </select>
-          </div>
         </div>
+      </div>
 
-        {/* Creators Grid */}
-        {filteredCreators.length === 0 ? (
-          <div className="text-center py-12 text-zinc-500 text-sm glass-panel rounded-2xl border border-white/5">
-            No matching creators found. Try relaxing your filters.
+      {/* Feed Posts - Vertical Scroll Layout */}
+      <div className="space-y-4 max-w-3xl mx-auto">
+        {feedPosts.length === 0 ? (
+          <div className="glass-panel rounded-2xl p-12 text-center">
+            <Rss className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
+            <p className="text-zinc-500 text-sm">No content available in the feed.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {filteredCreators.map((creator) => (
-              <div
-                key={creator.id}
-                className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col hover-scale"
-              >
-                <div className="flex items-start gap-4 mb-4">
-                  <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-2xl">
-                    {creator.avatar}
+          paginatedPosts.map(post => {
+            const creator = creators.find(c => c.id === post.creatorId);
+            const isPlaying = playingVideo === post.id;
+            
+            return (
+              <div key={post.id} className="glass-panel rounded-2xl p-5 border border-white/5 hover:border-cyan-500/30 transition-all">
+                {/* Creator Header */}
+                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-white/5">
+                  {/* Avatar / Initial */}
+                  <Link href={`/creator/${creator?.id ?? post.creatorId}`} className="flex items-center">
+                    <div className="w-10 h-10 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold">
+                      {creator?.name?.charAt(0) || post.creatorName?.charAt(0) || "C"}
+                    </div>
+                  </Link>
+                  {/* Name and niche */}
+                  <div className="flex-1">
+                    <Link href={`/creator/${creator?.id ?? post.creatorId}`} className="font-bold text-white text-sm hover:underline">
+                      {creator?.name ?? post.creatorName ?? "Unknown Creator"}
+                    </Link>
+                    <p className="text-xs text-zinc-500">{creator?.niche ?? "Various"}</p>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="font-bold text-sm text-white truncate">
-                        {creator.name}
-                      </h3>
-                      {creator.verified && (
-                        <CheckCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                      )}
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    post.visibility === "public" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                    post.visibility === "subscriber" ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" :
+                    "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                  }`}>
+                    {post.visibility === "premium" ? `Premium $${post.price}` : post.visibility}
+                  </span>
+                </div>
+
+                {/* Media Content */}
+                {post.type === "video" ? (
+                  <div className="relative rounded-xl bg-black/50 overflow-hidden mb-4">
+                    {isPlaying && post.mediaUrl ? (
+                      <video
+                        src={post.mediaUrl}
+                        className="w-full h-full object-cover rounded-xl"
+                        controls
+                        autoPlay
+                      />
+                    ) : (
+                      <div 
+                        className="w-full aspect-video rounded-xl bg-gradient-to-br from-purple-500/20 to-cyan-500/20 flex items-center justify-center cursor-pointer hover:from-purple-500/30 hover:to-cyan-500/30 transition-all"
+                        onClick={() => toggleVideo(post.id)}
+                      >
+                        <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center hover:scale-110 transition-all">
+                          <Play className="w-8 h-8 text-white ml-1" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : post.type === "image" && post.mediaUrl ? (
+                  <div className="mb-4">
+                    <img 
+                      src={post.mediaUrl} 
+                      alt={post.title}
+                      className="w-full rounded-xl object-cover max-h-96"
+                    />
+                  </div>
+                ) : null}
+
+                {/* Post Content */}
+                <div className="mb-4">
+                  <h3 className="font-bold text-white text-base mb-2">{post.title}</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">{post.content}</p>
+                </div>
+
+                {/* Engagement */}
+                <div className="flex items-center gap-4 pt-3 border-t border-white/5">
+                  <button 
+                    onClick={() => handleLike(post.id)}
+                    className={`flex items-center gap-1.5 text-xs transition-all ${likedPosts.has(post.id) ? "text-rose-400" : "text-zinc-500 hover:text-rose-400"}`}
+                  >
+                    <Heart className={`w-4 h-4 ${likedPosts.has(post.id) ? "fill-current" : ""}`} />
+                    <span>{post.likes + (likedPosts.has(post.id) ? 1 : 0)}</span>
+                  </button>
+                  {/* Engagement Ledger Comment */}
+                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <MessageSquare className="w-4 h-4" />
+                    <span>{post.comments?.length || 0}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <Share2 className="w-4 h-4" />
+                    <span>Share</span>
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+        {/* Pagination Controls */}
+        <div className="flex justify-center gap-4 mt-4">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 rounded bg-white/5 text-xs disabled:opacity-50 hover:bg-white/10"
+          >Prev</button>
+          <span className="text-sm text-zinc-400">Page {currentPage} of {Math.ceil(feedPosts.length / pageSize) || 1}</span>
+          <button
+            onClick={() => setCurrentPage(p => (p * pageSize < feedPosts.length ? p + 1 : p))}
+            disabled={currentPage * pageSize >= feedPosts.length}
+            className="px-3 py-1 rounded bg-white/5 text-xs disabled:opacity-50 hover:bg-white/10"
+          >Next</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderCampaigns = () => (
+    <div className="space-y-6">
+      <div className="glass-panel rounded-2xl p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <h1 className="text-2xl font-bold text-white">Campaigns</h1>
+        </div>
+        <p className="text-zinc-400 text-sm">Manage your creator campaigns and proposals.</p>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          {/* Discover Creators */}
+          <div className="glass-panel rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="w-5 h-5 text-cyan-400" />
+              <h2 className="text-lg font-bold text-white">Discover Creators</h2>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              {creators.map((creator) => (
+                <div key={creator.id} className="glass-panel-light rounded-xl p-4 border border-white/5 hover:border-cyan-500/30 transition-all">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-xl">
+                      {creator.avatar || "🎨"}
                     </div>
-                    <span className="text-[10px] text-zinc-400 font-semibold">
-                      {creator.niche}
-                    </span>
-                    <div className="flex items-center gap-1 text-[10px] text-zinc-500 mt-1">
-                      <MapPin className="w-3 h-3" />
-                      <span>{creator.location}</span>
+                    <div>
+                      <h3 className="font-semibold text-white">{creator.name}</h3>
+                      <p className="text-xs text-zinc-500">{creator.niche}</p>
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] text-zinc-500 mt-1">
-                      <Phone className="w-3 h-3" />
-                      <span className="truncate">
-                        {creator.contact || "Contact not added"}
+                  </div>
+                  <p className="text-sm text-zinc-400 line-clamp-2 mb-3">{creator.bio || "No bio available."}</p>
+                  <button
+                    onClick={() => setSelectedCreator(creator)}
+                    className="w-full py-2 rounded-xl bg-gradient-brand text-white text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/15 transition-all"
+                  >
+                    Send Proposal
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* My Proposals */}
+          <div className="glass-panel rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <FileText className="w-5 h-5 text-cyan-400" />
+              <h2 className="text-lg font-bold text-white">My Proposals</h2>
+            </div>
+
+            {myProposals.length === 0 ? (
+              <p className="text-sm text-zinc-400">You have not sent any proposals yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {myProposals.map((proposal) => (
+                  <div key={proposal.id} className="glass-panel-light rounded-xl p-4 border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="font-semibold text-white">{proposal.title}</h3>
+                        <p className="text-xs text-zinc-500">To: {proposal.creatorName}</p>
+                      </div>
+                      <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                        proposal.status === "accepted" 
+                          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
+                          : proposal.status === "declined"
+                          ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
+                          : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
+                      }`}>
+                        {proposal.status}
                       </span>
                     </div>
+                    <p className="text-sm text-zinc-400 mt-2">{proposal.details}</p>
                   </div>
-                </div>
-
-                <p className="text-zinc-400 text-xs line-clamp-2 leading-relaxed mb-5 flex-grow">
-                  {creator.bio}
-                </p>
-
-                <div className="grid grid-cols-3 border-y border-white/5 py-3 mb-5 text-center">
-                  <div>
-                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase">
-                      Followers
-                    </span>
-                    <span className="text-xs font-extrabold text-white mt-0.5">
-                      {creator.followers}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase">
-                      Engagement
-                    </span>
-                    <span className="text-xs font-extrabold text-cyan-400 mt-0.5 flex items-center justify-center gap-0.5">
-                      <Activity className="w-3 h-3 text-cyan-400" />
-                      {creator.engagement}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase">
-                      Base Price
-                    </span>
-                    <span className="text-xs font-extrabold text-emerald-400 mt-0.5">
-                                              {formatCurrency(creator.collabPrice)}
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => handleOpenCollab(creator)}
-                  className="w-full py-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 font-bold text-xs transition-all flex items-center justify-center gap-1.5"
-                >
-                  <Briefcase className="w-3.5 h-3.5" />
-                  <span>Send Collab Offer</span>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Feed: reuse the shared ViewerFeed UI so businesses see content like fans */}
-      <div>
-        <ViewerFeed />
-      </div>
-
-      {/* Collaboration Dialog Drawer Overlay */}
-      {selectedCreator && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md glass-panel p-6 rounded-2xl border border-white/10 shadow-2xl relative">
-            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-              <Briefcase className="w-5 h-5 text-cyan-400" />
-              <span>Sponsor {selectedCreator.name}</span>
-            </h3>
-            <p className="text-xs text-zinc-400 mb-5 leading-relaxed">
-              Define the contract terms. Initiating a proposal locks the
-              campaign budget in Inzozi escrow. Funds are paid out only if the
-              creator accepts.
-            </p>
-
-            {errorMsg && (
-              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/25 flex items-start gap-2 text-rose-400 text-xs mb-4">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{errorMsg}</span>
+                ))}
               </div>
             )}
-
-            <form onSubmit={handleSendProposal} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">
-                  Campaign Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Autumn Streetwear Promotion"
-                  value={campaignTitle}
-                  onChange={(e) => setCampaignTitle(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl glass-input text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">
-                  Campaign Deliverables / Details
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="Describe details: e.g. One YouTube review integration and 2 Twitter mentions tagging @Brand..."
-                  value={campaignDetails}
-                  onChange={(e) => setCampaignDetails(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl glass-input text-xs"
-                />
-                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase mt-3">
-                  Campaign Date
-                </label>
-                <input
-                  type="date"
-                  value={campaignDate}
-                  onChange={(e) => setCampaignDate(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl glass-input text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 mb-1.5 uppercase">
-                  Escrow Budget ($ USD)
-                </label>
-                <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
-                  <span className="text-xs text-zinc-400 font-bold">$</span>
-                  <input
-                    type="number"
-                    required
-                    value={campaignBudget}
-                    onChange={(e) => setCampaignBudget(e.target.value)}
-                    className="w-full bg-transparent text-xs border-none focus:outline-none text-white font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCreator(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-300 text-xs font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-brand text-white text-xs font-bold shadow-lg shadow-purple-500/10 flex items-center justify-center gap-1.5"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Lock Escrow & Send</span>
-                </button>
-              </div>
-            </form>
           </div>
         </div>
-      )}
 
-      {/* Active Campaign / Proposals Ledger */}
-      <div className="glass-panel p-6 rounded-2xl border border-white/5">
-        <h2 className="text-lg font-bold text-white mb-6">
-          Escrow Campaign Registry
-        </h2>
-        {proposals.length === 0 ? (
-          <div className="text-center py-12 text-zinc-500 text-sm">
-            No active collaborations drafted. Initiate an offer from the
-            directory above.
+        {/* Send Proposal Form */}
+        <div>
+          <div className="glass-panel rounded-2xl p-5 sticky top-[80px]">
+            <div className="flex items-center gap-2 mb-4">
+              <Briefcase className="w-5 h-5 text-cyan-400" />
+              <h2 className="text-lg font-bold text-white">Send Proposal</h2>
+            </div>
+
+            {selectedCreator ? (
+              <form onSubmit={handleSendProposal} className="space-y-4">
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Creator</label>
+                  <div className="rounded-xl px-3 py-2 text-sm text-white border border-cyan-500/20 bg-cyan-500/5">
+                    {selectedCreator.name}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Campaign Title</label>
+                  <input
+                    value={campaignTitle}
+                    onChange={(e) => setCampaignTitle(e.target.value)}
+                    placeholder="Example: Summer Promo"
+                    className="glass-input w-full rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Budget</label>
+                  <input
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
+                    placeholder="Example: 250"
+                    inputMode="numeric"
+                    className="glass-input w-full rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Proposal Message</label>
+                  <textarea
+                    value={proposalText}
+                    onChange={(e) => setProposalText(e.target.value)}
+                    rows={4}
+                    placeholder="Write your collaboration idea..."
+                    className="glass-input w-full rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={sending}
+                  className="w-full py-2.5 rounded-xl bg-gradient-brand text-white text-sm font-semibold disabled:opacity-60 hover:shadow-lg hover:shadow-purple-500/15 transition-all"
+                >
+                  {sending ? "Sending..." : "Send Proposal"}
+                </button>
+              </form>
+            ) : (
+              <p className="text-sm text-zinc-400">Select a creator to send a proposal.</p>
+            )}
           </div>
-        ) : (
-          <div className="space-y-4">
-            {proposals.map((prop) => (
-              <div
-                key={prop.id}
-                className="p-4 rounded-xl bg-white/5 border border-white/5 hover:bg-white/8 transition-all flex flex-col md:flex-row justify-between gap-4"
-              >
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
-                    <h3 className="font-bold text-sm text-white">
-                      {prop.title}
-                    </h3>
-                  </div>
-                  <p className="text-zinc-400 text-xs max-w-2xl">
-                    {prop.details}
-                  </p>
-                  <div className="flex items-center gap-4 text-[10px] text-zinc-500">
-                    <span>
-                      Creator:{" "}
-                      <strong className="text-zinc-300">
-                        {prop.creatorName}
-                      </strong>
-                    </span>
-                    <span>
-                      Budget locked:{" "}
-                      <strong className="text-emerald-400">
-                        {formatCurrency(prop.budget)}
-                      </strong>
-                    </span>
-                  </div>
-                </div>
+        </div>
+      </div>
+    </div>
+  );
 
-                <div className="flex flex-col justify-between items-end shrink-0 gap-3">
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      prop.status === "accepted"
-                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                        : prop.status === "declined"
-                          ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                          : "bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse"
-                    }`}
-                  >
-                    {prop.status === "pending_creator"
-                      ? "Awaiting Creator"
-                      : prop.status.replace("_", " ")}
-                  </span>
+  const renderWallet = () => (
+    <div className="space-y-6">
+      <div className="glass-panel rounded-2xl p-5">
+        <h1 className="text-2xl font-bold text-white">Brand Wallet</h1>
+        <p className="text-zinc-400 text-sm mt-1">Manage your funds and view transactions.</p>
+      </div>
 
-                  {prop.status === "pending_creator" && (
-                    <span className="text-[9px] text-zinc-500">
-                      Funds locked in Escrow vault
-                    </span>
-                  )}
-                </div>
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="glass-panel rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+              <WalletIcon className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500 uppercase">Current Balance</p>
+              <p className="text-3xl font-bold text-emerald-400">{formatCurrency(businessBalance ?? 0)}</p>
+            </div>
+          </div>
+          <button className="w-full py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/15 transition-all">
+            Add Funds
+          </button>
+        </div>
+
+        <div className="glass-panel rounded-2xl p-6">
+          <h3 className="font-bold text-white mb-4">Quick Stats</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">Total Spent</span>
+              <span className="text-white font-semibold">{formatCurrency(transactions.filter(t => t.amount < 0).reduce((sum, t) => sum + Math.abs(t.amount), 0))}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">Active Campaigns</span>
+              <span className="text-white font-semibold">{myProposals.filter(p => p.status !== "declined").length}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">Pending Payments</span>
+              <span className="text-yellow-400 font-semibold">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="glass-panel rounded-2xl p-5">
+        <h3 className="font-bold text-white mb-4">Recent Transactions</h3>
+        <div className="space-y-3">
+          {transactions.slice(0, 10).map((tx) => (
+            <div key={tx.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5">
+              <div>
+                <p className="text-sm text-zinc-300">{tx.description}</p>
+                <p className="text-xs text-zinc-500">{tx.date}</p>
               </div>
-            ))}
-          </div>
-        )}
+              <span className={`font-semibold ${tx.amount > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {tx.amount > 0 ? "+" : ""}{formatCurrency(typeof tx.amount === 'number' ? tx.amount : 0)}
+              </span>
+            </div>
+          ))}
+          {transactions.length === 0 && (
+            <p className="text-sm text-zinc-500 text-center py-6">No transactions yet</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderMessages = () => (
+    <div className="space-y-6">
+      <div className="glass-panel rounded-2xl p-5">
+        <h1 className="text-2xl font-bold text-white">Creator Chats</h1>
+        <p className="text-zinc-400 text-sm mt-1">Message creators about campaigns.</p>
+      </div>
+      <div className="glass-panel rounded-2xl p-12 text-center">
+        <MessageSquare className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
+        <p className="text-zinc-500 text-sm">No messages yet. Start a campaign to chat with creators!</p>
+      </div>
+    </div>
+  );
+
+  const renderProfile = () => (
+    <div className="space-y-6">
+      <div className="glass-panel rounded-2xl p-5">
+        <h1 className="text-2xl font-bold text-white">Business Profile</h1>
+        <p className="text-zinc-400 text-sm mt-1">Manage your business settings.</p>
+      </div>
+      <div className="glass-panel rounded-2xl p-12 text-center">
+        <p className="text-zinc-500 text-sm">Profile settings coming soon...</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen p-4 md:p-6">
+      <div className="mx-auto max-w-6xl">
+        {renderContent()}
       </div>
     </div>
   );

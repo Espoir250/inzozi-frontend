@@ -1,5 +1,11 @@
-export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
-export type ApplicationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED';
+export type CampaignStatus =
+  | "DRAFT"
+  | "ACTIVE"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type ApplicationStatus = "PENDING" | "ACCEPTED" | "DECLINED";
 
 export type BackendApplication = {
   id: string;
@@ -14,6 +20,7 @@ export type BackendApplication = {
     role: string;
     profileImage?: string | null;
   };
+  campaign?: BackendCampaign;
 };
 
 export type BackendCampaign = {
@@ -49,12 +56,11 @@ const authHeaders = () => {
 
 const requestJsonWithAuth = async <T>(
   path: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
 ): Promise<T> => {
-  const url = `${API_BASE_URL}${path}`;
-  const response = await fetch(url, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers: { ...authHeaders(), ...init.headers },
+    headers: { ...authHeaders(), ...(init.headers || {}) },
   });
 
   const text = await response.text().catch(() => "");
@@ -66,7 +72,9 @@ const requestJsonWithAuth = async <T>(
   }
 
   if (!response.ok) {
-    throw new Error(body?.error ?? body?.message ?? `Request failed (status ${response.status})`);
+    throw new Error(
+      body?.error ?? body?.message ?? `Request failed (status ${response.status})`,
+    );
   }
 
   return body as T;
@@ -100,10 +108,14 @@ export const createCampaignApi = async (payload: {
 };
 
 // Fetch campaigns for the logged-in user
-export const fetchUserCampaignsApi = async (userId: string): Promise<{ ok: boolean; data?: BackendCampaign[]; message?: string }> => {
+export const fetchUserCampaignsApi = async (
+  userId: string,
+): Promise<{ ok: boolean; data?: BackendCampaign[]; message?: string }> => {
   try {
-    const data = await requestJsonWithAuth<BackendCampaign[] | { data: BackendCampaign[] }>(`/users/${userId}/campaigns`, {
-      method: "GET"
+    const data = await requestJsonWithAuth<
+      BackendCampaign[] | { data: BackendCampaign[] }
+    >(`/users/${userId}/campaigns`, {
+      method: "GET",
     });
     return { ok: true, data: Array.isArray(data) ? data : (data as any).data };
   } catch (err: any) {
@@ -111,11 +123,17 @@ export const fetchUserCampaignsApi = async (userId: string): Promise<{ ok: boole
   }
 };
 
-// Fetch all campaigns (general marketplace feed)
-export const fetchCampaignsListApi = async (): Promise<{ ok: boolean; data?: BackendCampaign[]; message?: string }> => {
+// Fetch all campaigns
+export const fetchCampaignsListApi = async (): Promise<{
+  ok: boolean;
+  data?: BackendCampaign[];
+  message?: string;
+}> => {
   try {
-    const data = await requestJsonWithAuth<BackendCampaign[] | { data: BackendCampaign[] }>("/campaigns", {
-      method: "GET"
+    const data = await requestJsonWithAuth<
+      BackendCampaign[] | { data: BackendCampaign[] }
+    >("/campaigns", {
+      method: "GET",
     });
     return { ok: true, data: Array.isArray(data) ? data : (data as any).data };
   } catch (err: any) {
@@ -123,32 +141,69 @@ export const fetchCampaignsListApi = async (): Promise<{ ok: boolean; data?: Bac
   }
 };
 
-// Create an application (send proposal to a creator or apply to a campaign)
+// Create an application (business invites creator or creator applies)
 export const createApplicationApi = async (
   campaignId: string,
-  payload: { creatorId: string; proposal?: string }
+  payload: { creatorId: string; proposal?: string },
 ): Promise<{ ok: boolean; data?: BackendApplication; message?: string }> => {
   try {
-    const data = await requestJsonWithAuth<BackendApplication>(`/campaigns/${campaignId}/applications`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    const data = await requestJsonWithAuth<BackendApplication>(
+      `/campaigns/${campaignId}/applications`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
     return { ok: true, data };
   } catch (err: any) {
     return { ok: false, message: err.message };
   }
 };
 
-// Update application status (accept/decline)
-export const updateApplicationStatusApi = async (
+// Create an offer
+export const createOfferApi = async (
   campaignId: string,
-  payload: { creatorId: string; status: ApplicationStatus }
+  creatorId: string,
+  proposal?: string,
+): Promise<{ ok: boolean; data?: BackendApplication; message?: string }> => {
+  return await createApplicationApi(campaignId, {
+    creatorId,
+    proposal,
+  });
+};
+
+// Fetch applications/offers for the logged-in user
+export const fetchCreatorOffersApi = async (): Promise<{
+  ok: boolean;
+  data?: BackendApplication[];
+  message?: string;
+}> => {
+  try {
+    const data = await requestJsonWithAuth<
+      BackendApplication[] | { data: BackendApplication[] }
+    >("/campaigns/my/applications", {
+      method: "GET",
+    });
+    return { ok: true, data: Array.isArray(data) ? data : (data as any).data };
+  } catch (err: any) {
+    return { ok: false, message: err.message };
+  }
+};
+
+// Respond to an offer using your backend route
+export const respondToOfferApi = async (
+  campaignId: string,
+  creatorId: string,
+  status: ApplicationStatus,
 ): Promise<{ ok: boolean; data?: BackendApplication; message?: string }> => {
   try {
-    const data = await requestJsonWithAuth<BackendApplication>(`/campaigns/${campaignId}/applications`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
+    const data = await requestJsonWithAuth<BackendApplication>(
+      `/campaigns/${campaignId}/applications`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ creatorId, status }),
+      },
+    );
     return { ok: true, data };
   } catch (err: any) {
     return { ok: false, message: err.message };

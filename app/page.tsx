@@ -7,7 +7,7 @@ import { Navbar } from "@/components/Navbar";
 import { Sidebar } from "@/components/Sidebar";
 import { Hero } from "@/components/Hero";
 import { CreatorDashboard } from "@/components/CreatorDashboard";
-import { BusinessDashboard } from "@/components/BusinessDashboard";
+import  { BusinessDashboard } from "@/components/BusinessDashboard";
 import { ViewerFeed } from "@/components/ViewerFeed";
 import { MessagingPanel } from "@/components/MessagingPanel";
 import { AdminDashboard } from "@/components/AdminDashboard";

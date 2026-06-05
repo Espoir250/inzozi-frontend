@@ -376,7 +376,7 @@ export const WalletDashboard: React.FC = () => {
                       <td className="py-3.5 max-w-xs truncate text-zinc-400">{tx.description}</td>
                       <td className="py-3.5 text-zinc-500">{tx.date}</td>
                       <td className={`py-3.5 text-right font-bold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
-                        {isPositive ? "+" : "-"}${tx.amount.toFixed(2)}
+                        {isPositive ? "+" : "-"}${typeof tx.amount === "number" ? tx.amount.toFixed(2) : "0.00"}
                       </td>
                     </tr>
                   );

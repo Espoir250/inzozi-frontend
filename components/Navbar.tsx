@@ -150,22 +150,22 @@ export const Navbar: React.FC = () => {
                     No new notifications
                   </div>
                 ) : (
-                  notifications.map(notif => (
-                    <button 
-                      key={notif.id}
-                      onClick={() => {
-                        if (notif.linkTab) {
-                          setActiveTab(notif.linkTab);
-                          router.push("/");
-                        }
-                        setShowNotifications(false);
-                      }}
-                      className="text-left w-full p-2.5 rounded-lg bg-white/5 border border-white/5 text-xs text-zinc-300 leading-relaxed hover:bg-white/10 transition-all cursor-pointer"
-                    >
-                      <p>{notif.text}</p>
-                      <span className="text-[10px] text-zinc-500 mt-1 block">{notif.date}</span>
-                    </button>
-                  ))
+                                      notifications.map((notif, index) => (
+                      <button 
+                        key={notif.id + '-' + index}
+                        onClick={() => {
+                          if (notif.linkTab) {
+                            setActiveTab(notif.linkTab);
+                            router.push("/");
+                          }
+                          setShowNotifications(false);
+                        }}
+                        className="text-left w-full p-2.5 rounded-lg bg-white/5 border border-white/5 text-xs text-zinc-300 leading-relaxed hover:bg-white/10 transition-all cursor-pointer"
+                      >
+                        <p>{notif.text}</p>
+                        <span className="text-[10px] text-zinc-500 mt-1 block">{notif.date}</span>
+                      </button>
+                    ))
                 )}
               </div>
             </div>

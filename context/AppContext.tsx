@@ -1,8 +1,21 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { loginWithApi, logoutWithApi, registerWithApi, verifyRegistrationWithApi } from "@/lib/authApi";
-import { createCampaignApi, createApplicationApi, fetchUserCampaignsApi } from "@/lib/campaignApi";
+import {
+  loginWithApi,
+  logoutWithApi,
+  registerWithApi,
+  verifyRegistrationWithApi,
+} from "@/lib/authApi";
+import {
+  createCampaignApi,
+  createApplicationApi,
+  fetchUserCampaignsApi,
+  fetchCreatorOffersApi,
+  BackendApplication,
+  createOfferApi,
+  respondToOfferApi,
+} from "@/lib/campaignApi";
 import { BackendContent, createContentWithApi, fetchContentList } from "@/lib/contentApi";
 import { uploadProfileImageWithApi, fetchUsersApi, BackendUser } from "@/lib/userApi";
 import {
@@ -55,17 +68,12 @@ type CreatorProfileUpdate = Partial<
   subscriptionFee?: number;
 };
 
-/**
- * Creator — id is always the real backend UUID after login.
- * displayName is the nickname/stage name from creator_profile.specialization.
- * name is the full name from users table (used as fallback).
- */
 export interface Creator {
-  id: string;          // real backend UUID (users.id)
-  profileId?: string;  // creator_profile.id (for profile updates)
-  name: string;        // display name (specialization) or full name fallback
-  avatar: string;      // avatar URL or emoji fallback
-  niche: string;       // specialization field
+  id: string;
+  profileId?: string;
+  name: string;
+  avatar: string;
+  niche: string;
   followers: number;
   location: string;
   contact: string;
@@ -123,7 +131,7 @@ export interface Proposal {
 }
 
 export interface DirectMessageThread {
-  id: string;                // conversationId from backend (MD5 hash)
+  id: string;
   fanId: string;
   fanName: string;
   creatorId: string;
@@ -243,13 +251,16 @@ interface AppContextType {
   likePost: (postId: string) => void;
   commentOnPost: (postId: string, text: string) => void;
   launchCampaignProposal: (
+    campaignId: string,
     creatorId: string,
-    title: string,
-    details: string,
-    budget: number
-  ) => void;
+    proposal: string
+  ) => Promise<void>;
   startChat: (partnerId: string, partnerName: string) => void;
-  respondToProposal: (proposalId: string, action: "accept" | "decline") => void;
+  respondToProposal: (
+    campaignId: string,
+    creatorId: string,
+    action: "accept" | "decline"
+  ) => Promise<void>;
   sendMessageToProposal: (proposalId: string, text: string) => Promise<boolean>;
   startDirectMessage: (creatorId: string) => void;
   sendMessageToDirectMessage: (threadId: string, text: string) => Promise<boolean>;
@@ -262,10 +273,6 @@ interface AppContextType {
   addNotification: (text: string, linkTab?: Tab) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const formatMessageDeliveryTime = (value?: string | null) => {
@@ -276,12 +283,8 @@ const formatMessageDeliveryTime = (value?: string | null) => {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
-/**
- * Map a BackendUser (role = CREATOR) into a Creator shape.
- * Uses the user's real UUID as id so all API calls use the correct recipient.
- */
 const backendUserToCreator = (u: BackendUser): Creator => ({
-  id: u.id,                                      // real UUID — critical for messaging
+  id: u.id,
   name: u.name,
   avatar: u.profileImage ?? "🎨",
   niche: "Creator",
@@ -296,9 +299,6 @@ const backendUserToCreator = (u: BackendUser): Creator => ({
   subscriptionFee: 0,
 });
 
-/**
- * Map a BackendUser (role = BUSINESS) into a Business shape.
- */
 const backendUserToBusiness = (u: BackendUser): Business => ({
   id: u.id,
   name: u.name,
@@ -310,16 +310,11 @@ const backendUserToBusiness = (u: BackendUser): Business => ({
   bio: "",
 });
 
-/**
- * Convert a BackendContent record into the local Post shape.
- * Looks up the creator by creatorId from the provided creators list.
- */
 const backendContentToPost = (content: BackendContent, creatorsList: Creator[]): Post => {
   const creator = creatorsList.find((c) => c.id === content.creatorId);
   const postType =
     content.type === "article" ? "text" : content.type === "audio" ? "video" : content.type;
-  const visibility =
-    content.visibility === "public" ? "public" : "premium";
+  const visibility = content.visibility === "public" ? "public" : "premium";
   return {
     id: content.id,
     creatorId: content.creatorId,
@@ -370,24 +365,18 @@ const initialNotifications: Notification[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
-
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [activeRole, setActiveRole] = useState<Role>("landing");
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [isMobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
-  // Balances
   const [fanBalance, setFanBalance] = useState<number>(50.0);
   const [creatorBalance, setCreatorBalance] = useState<number>(120.0);
   const [businessBalance, setBusinessBalance] = useState<number>(500.0);
   const [adminBalance, setAdminBalance] = useState<number>(12.5);
   const [transactions, setTransactions] = useState<WalletTransaction[]>(initialTransactions);
 
-  // Real data from backend — no mock seed values
   const [creators, setCreators] = useState<Creator[]>([]);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -396,250 +385,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
   const [isLoadingCreators, setIsLoadingCreators] = useState(false);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
-
   const [pendingVerifications, setPendingVerifications] = useState<
     { id: string; name: string; type: "creator" | "business"; niche: string; bio: string }[]
   >([]);
 
-  // ---------------------------------------------------------------------------
-  // Data fetching helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Fetch all users from the backend and split them into creators / businesses.
-   * Also fetches creator profiles to enrich with niche, bio, location, avatar, etc.
-   */
-  const refreshCreators = async () => {
-    setIsLoadingCreators(true);
-    try {
-      const allUsers = await fetchUsersApi();
-
-      // Build creators from CREATOR role users
-      const creatorUsers = allUsers.filter((u) => u.role === "CREATOR");
-      const businessUsers = allUsers.filter((u) => u.role === "BUSINESS");
-
-      // Try to enrich creators with their creator_profile data
-      try {
-        const API_BASE_URL = (
-          process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1"
-        ).replace(/\/$/, "");
-        const token =
-          typeof window !== "undefined"
-            ? localStorage.getItem("inzozi_accessToken")
-            : null;
-        const profileRes = await fetch(`${API_BASE_URL}/creator-profile?limit=200`, {
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        if (profileRes.ok) {
-          const profileJson = await profileRes.json();
-          const profiles: Array<{
-            id: string;
-            userId: string;
-            bio?: string;
-            specialization?: string;
-            socialLinks?: string;
-            earnings?: number;
-            followers?: number;
-            avatar?: string;
-            location?: string;
-            subscriptionFee?: number;
-          }> = Array.isArray(profileJson) ? profileJson : profileJson.data ?? [];
-
-          // Merge profile data onto creator users
-          const enrichedCreators: Creator[] = creatorUsers.map((u) => {
-            const profile = profiles.find((p) => p.userId === u.id);
-            return {
-              id: u.id,                                             // real UUID
-              profileId: profile?.id,
-              name: profile?.specialization?.trim() || u.name,     // nickname or real name
-              avatar: profile?.avatar || u.profileImage || "🎨",
-              niche: profile?.specialization || "Creator",
-              followers: profile?.followers ?? 0,
-              location: profile?.location || "",
-              contact: u.email,
-              engagement: "0%",
-              collabPrice: profile?.subscriptionFee ?? 0,
-              verified: u.verificationStatus === "VERIFIED",
-              bio: profile?.bio || "",
-              subscribersCount: 0,
-              subscriptionFee: profile?.subscriptionFee ?? 0,
-            };
-          });
-
-          setCreators(enrichedCreators);
-        } else {
-          // No profile data — use raw user data
-          setCreators(creatorUsers.map(backendUserToCreator));
-        }
-      } catch {
-        setCreators(creatorUsers.map(backendUserToCreator));
-      }
-
-      setBusinesses(businessUsers.map(backendUserToBusiness));
-    } catch {
-      // Leave empty on failure — UI should show empty state
-    } finally {
-      setIsLoadingCreators(false);
-    }
+  const saveTransactions = (newTx: WalletTransaction[]) => {
+    setTransactions(newTx);
+    localStorage.setItem("inzozi_transactions", JSON.stringify(newTx));
   };
-
-  /**
-   * Fetch published content from the backend and map to Post shape.
-   * Uses current creators state for name/avatar enrichment.
-   */
-  const refreshPosts = async () => {
-    setIsLoadingPosts(true);
-    try {
-      const contentList = await fetchContentList();
-      // We need latest creators for enrichment — read from state via closure
-      // Use a callback to get the latest creators value
-      setPosts((currentPosts) => {
-        // We use setCreators callback trick: read creators from React state
-        // but since we can't do that here, we enrich after creators load
-        return contentList.map((c) => backendContentToPost(c, []));
-      });
-      // Immediately re-enrich with creators
-      setCreators((currentCreators) => {
-        setPosts(contentList.map((c) => backendContentToPost(c, currentCreators)));
-        return currentCreators;
-      });
-    } catch {
-      // Leave posts empty on failure
-    } finally {
-      setIsLoadingPosts(false);
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Load real conversations from backend
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Fetch all conversations from backend, then load each thread's messages.
-   * Maps backend shape → DirectMessageThread so MessagingPanel works unchanged.
-   */
-  const refreshDirectMessages = async () => {
-    const convRes = await listConversationsApi();
-    if (!convRes.ok || !convRes.data) return;
-
-    const threads: DirectMessageThread[] = await Promise.all(
-      convRes.data.map(async (conv: BackendConversation) => {
-        // Load the full thread messages
-        const threadRes = await getConversationThreadApi(conv.conversationId);
-        const backendMessages = threadRes.data ?? [];
-
-        // Map backend messages to local shape
-        const messages = backendMessages.map((m: BackendMessage) => ({
-          id: m.id,
-          senderId: m.senderId,
-          sender: m.sender?.name ?? m.senderId,
-          text: m.message,
-          timestamp: new Date(m.createdAt).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-        }));
-
-        // currentUser might not be in state yet during restore; read from localStorage
-        const storedUser = (() => {
-          try {
-            return JSON.parse(localStorage.getItem("inzozi_currentUser") ?? "null");
-          } catch { return null; }
-        })();
-        const meId = storedUser?.id ?? "";
-        const participant = conv.participant;
-
-        // Determine fanId/creatorId so existing MessagingPanel logic still works
-        const amIFan = storedUser?.role === "fan" || storedUser?.role === "CONSUMER";
-        const fanId = amIFan ? meId : participant.id;
-        const fanName = amIFan ? (storedUser?.fullName ?? meId) : participant.name;
-        const creatorId = amIFan ? participant.id : meId;
-        const creatorName = amIFan ? participant.name : (storedUser?.fullName ?? meId);
-
-        return {
-          id: conv.conversationId,           // use stable backend id
-          conversationId: conv.conversationId,
-          fanId,
-          fanName,
-          creatorId,
-          creatorName,
-          participantAvatar: participant.profileImage ?? undefined,
-          participantRole: participant.role,
-          messages,
-          lastFetched: Date.now(),
-        } as DirectMessageThread;
-      })
-    );
-
-    setDirectMessages(threads);
-    localStorage.setItem("inzozi_directMessages", JSON.stringify(threads));
-  };
-
-  // ---------------------------------------------------------------------------
-  // Restore session on mount
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-    const readJson = <T,>(key: string): T | null => {
-      const saved = localStorage.getItem(key);
-      if (!saved) return null;
-      try {
-        return JSON.parse(saved) as T;
-      } catch {
-        localStorage.removeItem(key);
-        return null;
-      }
-    };
-
-    window.setTimeout(async () => {
-      const savedUser = readJson<AuthUser>("inzozi_currentUser");
-      const savedRole = localStorage.getItem("inzozi_activeRole") as Role | null;
-      const savedFanBalance = localStorage.getItem("inzozi_fanBalance");
-      const savedCreatorBalance = localStorage.getItem("inzozi_creatorBalance");
-      const savedBusinessBalance = localStorage.getItem("inzozi_businessBalance");
-      const savedAdminBalance = localStorage.getItem("inzozi_adminBalance");
-
-      if (savedUser) {
-        setCurrentUser(savedUser);
-        setActiveRole(savedUser.role);
-        setActiveTab(savedUser.role === "fan" || savedUser.role === "creator" ? "feed" : "dashboard");
-        // Re-fetch live data on session restore
-        await refreshCreators();
-        await refreshPosts();
-        await refreshDirectMessages(); // load real conversations from backend
-      } else if (savedRole && ["landing", "creator", "business", "fan", "admin"].includes(savedRole)) {
-        setActiveRole(savedRole);
-        await refreshCreators();
-        await refreshPosts();
-      } else {
-        // First visit — fetch public data
-        await refreshCreators();
-        await refreshPosts();
-      }
-
-      if (savedFanBalance) setFanBalance(parseFloat(savedFanBalance));
-      if (savedCreatorBalance) setCreatorBalance(parseFloat(savedCreatorBalance));
-      if (savedBusinessBalance) setBusinessBalance(parseFloat(savedBusinessBalance));
-      if (savedAdminBalance) setAdminBalance(parseFloat(savedAdminBalance));
-
-      setTransactions(readJson<WalletTransaction[]>("inzozi_transactions") ?? initialTransactions);
-      setProposals(readJson<Proposal[]>("inzozi_proposals") ?? []);
-      setDirectMessages(readJson<DirectMessageThread[]>("inzozi_directMessages") ?? []);
-      setNotifications(readJson<Notification[]>("inzozi_notifications") ?? initialNotifications);
-    }, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (activeRole !== "landing") localStorage.setItem("inzozi_activeRole", activeRole);
-  }, [activeRole]);
-
-  // ---------------------------------------------------------------------------
-  // Notifications
-  // ---------------------------------------------------------------------------
 
   const addNotification = (text: string, linkTab?: Tab) => {
     const newNotif: Notification = {
@@ -656,10 +409,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // ---------------------------------------------------------------------------
-  // Auth helpers
-  // ---------------------------------------------------------------------------
-
   const getRegisteredUsers = (): AuthUser[] => {
     if (typeof window === "undefined") return [];
     try {
@@ -672,10 +421,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const saveUserProfile = (user: AuthUser) => {
     const users = getRegisteredUsers();
     const normalizedEmail = user.email?.trim().toLowerCase();
-    const updatedUsers = [
-      user,
-      ...users.filter((item) => item.email?.toLowerCase() !== normalizedEmail),
-    ];
+    const updatedUsers = [user, ...users.filter((item) => item.email?.toLowerCase() !== normalizedEmail)];
     localStorage.setItem("inzozi_user_profiles", JSON.stringify(updatedUsers));
   };
 
@@ -693,9 +439,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveTab(user.role === "fan" || user.role === "creator" ? "feed" : "dashboard");
   };
 
-  // ---------------------------------------------------------------------------
-  // Auth actions
-  // ---------------------------------------------------------------------------
+  const refreshCreators = async () => {
+    setIsLoadingCreators(true);
+    try {
+      const allUsers = await fetchUsersApi();
+      const creatorUsers = allUsers.filter((u) => u.role === "CREATOR");
+      const businessUsers = allUsers.filter((u) => u.role === "BUSINESS");
+      setCreators(creatorUsers.map(backendUserToCreator));
+      setBusinesses(businessUsers.map(backendUserToBusiness));
+    } catch {
+      setCreators([]);
+      setBusinesses([]);
+    } finally {
+      setIsLoadingCreators(false);
+    }
+  };
+
+  const refreshPosts = async () => {
+    setIsLoadingPosts(true);
+    try {
+      const contentList = await fetchContentList();
+      setPosts(contentList.map((c) => backendContentToPost(c, creators)));
+    } catch {
+      setPosts([]);
+    } finally {
+      setIsLoadingPosts(false);
+    }
+  };
+
+  const refreshDirectMessages = async () => {
+    const convRes = await listConversationsApi();
+    if (!convRes.ok || !convRes.data) return;
+
+    const threads: DirectMessageThread[] = await Promise.all(
+      convRes.data.map(async (conv: BackendConversation) => {
+        const threadRes = await getConversationThreadApi(conv.conversationId);
+        const backendMessages = threadRes.data ?? [];
+        const messages = backendMessages.map((m: BackendMessage) => ({
+          id: m.id,
+          senderId: m.senderId,
+          sender: m.sender?.name ?? m.senderId,
+          text: m.message,
+          timestamp: new Date(m.createdAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        }));
+
+        const storedUser = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("inzozi_currentUser") ?? "null");
+          } catch {
+            return null;
+          }
+        })();
+
+        const meId = storedUser?.id ?? "";
+        const participant = conv.participant;
+        const amIFan = storedUser?.role === "fan" || storedUser?.role === "CONSUMER";
+        const fanId = amIFan ? meId : participant.id;
+        const fanName = amIFan ? (storedUser?.fullName ?? meId) : participant.name;
+        const creatorId = amIFan ? participant.id : meId;
+        const creatorName = amIFan ? participant.name : (storedUser?.fullName ?? meId);
+
+        return {
+          id: conv.conversationId,
+          fanId,
+          fanName,
+          creatorId,
+          creatorName,
+          participantAvatar: participant.profileImage ?? undefined,
+          participantRole: participant.role,
+          messages,
+          lastFetched: Date.now(),
+        };
+      })
+    );
+
+    setDirectMessages(threads);
+    localStorage.setItem("inzozi_directMessages", JSON.stringify(threads));
+  };
+
+  const refreshProposals = async () => {
+    try {
+      const result = await fetchCreatorOffersApi();
+      if (!result.ok) {
+        console.warn("Could not fetch proposals:", result.message);
+        return;
+      }
+      const apps = result.data ?? [];
+      const mapped: Proposal[] = apps.map((app) => {
+        const businessId = app.campaign?.businessId ?? app.campaignId;
+        const businessName = businesses.find((b) => b.id === businessId)?.name ?? "Business";
+        return {
+          id: app.id,
+          businessId,
+          businessName,
+          creatorId: app.creatorId,
+          creatorName: app.creator?.name ?? "Creator",
+          title: app.campaign?.title ?? "Campaign Offer",
+          details: app.proposal ?? "",
+          budget: app.campaign?.budget ?? 0,
+          status:
+            app.status === "PENDING"
+              ? "pending_creator"
+              : app.status === "ACCEPTED"
+                ? "accepted"
+                : "declined",
+          contractCreated: app.status === "ACCEPTED",
+          messages: [],
+        };
+      });
+      setProposals(mapped);
+      localStorage.setItem("inzozi_proposals", JSON.stringify(mapped));
+    } catch (err) {
+      console.warn("refreshProposals error", err);
+    }
+  };
 
   const registerUser = async (payload: RegisterUserPayload) => {
     const normalizedEmail = payload.email.trim().toLowerCase();
@@ -769,12 +629,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       saveUserProfile(user);
       saveAuthenticatedUser(user, result.accessToken, result.refreshToken);
-
-      // Fetch real data from backend after login
       await refreshCreators();
       await refreshPosts();
-      await refreshDirectMessages(); // load real conversations
-
+      await refreshDirectMessages();
+      await refreshProposals();
       return { ok: true, message: result.message };
     } catch (error) {
       return {
@@ -795,17 +653,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUser(null);
     setActiveRole("landing");
     setActiveTab("dashboard");
-    // Clear in-memory data so next user starts fresh
     setCreators([]);
     setBusinesses([]);
     setPosts([]);
     setProposals([]);
     setDirectMessages([]);
   };
-
-  // ---------------------------------------------------------------------------
-  // Profile updates
-  // ---------------------------------------------------------------------------
 
   const updateFanProfile = async (updates: Partial<AuthUser> & { avatarFile?: File }) => {
     if (!currentUser) {
@@ -856,28 +709,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nextName = updates.name?.trim() || existingCreator?.name || currentUser?.fullName || "Creator";
     const nextAvatar = avatar?.trim() || existingCreator?.avatar || currentUser?.avatar || "";
 
-    setCreators((prev) => {
-      const updated = prev.map((c) => {
-        if (c.id !== creatorId) return c;
-        return {
-          ...c,
-          name: nextName,
-          avatar: nextAvatar,
-          location: updates.location?.trim() ?? c.location,
-          contact: updates.contact?.trim() ?? c.contact,
-          bio: updates.bio?.trim() ?? c.bio,
-          niche: updates.niche?.trim() ?? c.niche,
-          subscriptionFee: updates.subscriptionFee ?? c.subscriptionFee,
-        };
-      });
-      return updated;
-    });
+    setCreators((prev) =>
+      prev.map((c) =>
+        c.id !== creatorId
+          ? c
+          : {
+              ...c,
+              name: nextName,
+              avatar: nextAvatar,
+              location: updates.location?.trim() ?? c.location,
+              contact: updates.contact?.trim() ?? c.contact,
+              bio: updates.bio?.trim() ?? c.bio,
+              niche: updates.niche?.trim() ?? c.niche,
+              subscriptionFee: updates.subscriptionFee ?? c.subscriptionFee,
+            }
+      )
+    );
 
     setPosts((prev) =>
-      prev.map((post) => {
-        if (post.creatorId !== creatorId) return post;
-        return { ...post, creatorName: nextName, creatorAvatar: nextAvatar };
-      })
+      prev.map((post) =>
+        post.creatorId !== creatorId ? post : { ...post, creatorName: nextName, creatorAvatar: nextAvatar }
+      )
     );
 
     if (currentUser) {
@@ -895,15 +747,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     addNotification("Creator profile updated.");
     return { ok: true, message: "Creator profile updated successfully." };
-  };
-
-  // ---------------------------------------------------------------------------
-  // Wallet
-  // ---------------------------------------------------------------------------
-
-  const saveTransactions = (newTx: WalletTransaction[]) => {
-    setTransactions(newTx);
-    localStorage.setItem("inzozi_transactions", JSON.stringify(newTx));
   };
 
   const deposit = (amount: number, target: "fan" | "business") => {
@@ -1057,10 +900,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  // ---------------------------------------------------------------------------
-  // Content / Posts
-  // ---------------------------------------------------------------------------
-
   const createPost = async (
     title: string,
     content: string,
@@ -1099,65 +938,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  // ---------------------------------------------------------------------------
-  // Proposals / Campaigns
-  // ---------------------------------------------------------------------------
-
-  const launchCampaignProposal = (
+  const launchCampaignProposal = async (
+    campaignId: string,
     creatorId: string,
-    title: string,
-    details: string,
-    budget: number
-  ) => {
+    proposal: string
+  ): Promise<void> => {
     if (!currentUser) return;
-    if (businessBalance < budget) {
-      addNotification("Failed to send proposal: Insufficient funds for escrow deposit.");
+
+    if (businessBalance <= 0) {
+      addNotification("Failed to send proposal: insufficient business balance.");
       return;
     }
-    if (creatorId === currentUser.id) {
-      addNotification("You cannot send a proposal to yourself.", "messages");
-      return;
-    }
-    const timestamp = new Date().toISOString().split("T")[0];
+
     const creatorName = creators.find((c) => c.id === creatorId)?.name ?? "Creator";
-    const newBizBal = businessBalance - budget;
-    setBusinessBalance(newBizBal);
-    localStorage.setItem("inzozi_businessBalance", newBizBal.toString());
+
     const newProposal: Proposal = {
       id: "pr_" + Date.now(),
-      businessId: currentUser.id,           // real UUID
+      businessId: currentUser.id,
       businessName: currentUser.fullName || currentUser.id,
-      creatorId,                             // real UUID
+      creatorId,
       creatorName,
-      title,
-      details,
-      budget,
+      title: campaignId,
+      details: proposal,
+      budget: 0,
       status: "pending_creator",
       contractCreated: true,
       messages: [
         {
           id: "m_init",
           sender: currentUser.fullName || currentUser.id,
-          text: `Hi ${creatorName}, we'd love to collaborate on: "${title}". Budget: $${budget}. ${details}`,
+          text: proposal,
           timestamp: "Just Now",
         },
       ],
     };
+
     setProposals((prev) => {
       const updated = [newProposal, ...prev];
       localStorage.setItem("inzozi_proposals", JSON.stringify(updated));
       return updated;
     });
-    saveTransactions([
-      { id: "tx_esc_" + Date.now(), type: "campaign_escrow", amount: budget, description: `Escrow for campaign to ${creatorName}`, date: timestamp },
-      ...transactions,
-    ]);
-    addNotification(`Sent sponsorship proposal to ${creatorName}. $${budget.toFixed(2)} held in escrow.`);
-  };
 
-  // ---------------------------------------------------------------------------
-  // Messaging
-  // ---------------------------------------------------------------------------
+    addNotification(`Sent proposal to ${creatorName}.`);
+  };
 
   const startChat = (partnerId: string, partnerName: string) => {
     if (!currentUser) return;
@@ -1168,38 +991,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     startDirectMessage(partnerId);
   };
 
-  /**
-   * Start a DM thread. creatorId MUST be a real backend UUID.
-   * Since creators state is now sourced from the backend, creator.id is always a real UUID.
-   */
   const startDirectMessage = (creatorId: string) => {
     if (!currentUser) return;
     if (creatorId === currentUser.id) {
       addNotification("You cannot start a conversation with yourself.", "messages");
       return;
     }
-
-    // Look up in creators first; if not found (e.g. fan messaging a business) fall back to businesses
     const targetCreator = creators.find((c) => c.id === creatorId);
     const targetBusiness = businesses.find((b) => b.id === creatorId);
     const targetName = targetCreator?.name ?? targetBusiness?.name ?? "User";
-
     const existing = directMessages.find(
       (dm) =>
         (dm.fanId === currentUser.id && dm.creatorId === creatorId) ||
         (dm.creatorId === currentUser.id && dm.fanId === creatorId)
     );
     if (existing) return;
-
     const newDM: DirectMessageThread = {
       id: "dm_" + Date.now(),
-      fanId: currentUser.id,            // real UUID from login
+      fanId: currentUser.id,
       fanName: currentUser.fullName || currentUser.id,
-      creatorId,                         // real UUID from backend
+      creatorId,
       creatorName: targetName,
       messages: [],
     };
-
     setDirectMessages((prev) => {
       const updated = [newDM, ...prev];
       localStorage.setItem("inzozi_directMessages", JSON.stringify(updated));
@@ -1212,9 +1026,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const thread = directMessages.find((dm) => dm.id === threadId);
     if (!thread) return false;
 
-    // Both fanId and creatorId are real backend UUIDs
     const receiverId = currentUser.id === thread.fanId ? thread.creatorId : thread.fanId;
-
     if (!receiverId || receiverId === currentUser.id) {
       addNotification("Could not send message: invalid receiver.", "messages");
       return false;
@@ -1226,7 +1038,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // Optimistically add the message to the local thread immediately
     setDirectMessages((prev) => {
       const updated = prev.map((dm) => {
         if (dm.id !== threadId) return dm;
@@ -1248,9 +1059,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
 
-    // Re-fetch all conversations so both sides stay in sync
     setTimeout(() => refreshDirectMessages(), 500);
-
     return true;
   };
 
@@ -1259,10 +1068,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const proposal = proposals.find((p) => p.id === proposalId);
     if (!proposal) return false;
 
-    // Both businessId and creatorId are real backend UUIDs
     const receiverId =
       currentUser.id === proposal.businessId ? proposal.creatorId : proposal.businessId;
-
     if (!receiverId || receiverId === currentUser.id) {
       addNotification("Could not send message: invalid receiver.", "messages");
       return false;
@@ -1297,67 +1104,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  const respondToProposal = (proposalId: string, action: "accept" | "decline") => {
-    const timestamp = new Date().toISOString().split("T")[0];
-    setProposals((prev) => {
-      const updated = prev.map((prop) => {
-        if (prop.id !== proposalId) return prop;
-        if (action === "accept") {
-          const commission = prop.budget * 0.05;
-          const netPayout = prop.budget - commission;
-          const newCreatorBal = creatorBalance + netPayout;
-          setCreatorBalance(newCreatorBal);
-          localStorage.setItem("inzozi_creatorBalance", newCreatorBal.toString());
-          const newAdminBal = adminBalance + commission;
-          setAdminBalance(newAdminBal);
-          localStorage.setItem("inzozi_adminBalance", newAdminBal.toString());
-          saveTransactions([
-            { id: "tx_pay_" + Date.now(), type: "campaign_payout", amount: netPayout, description: `Escrow payout for "${prop.title}"`, date: timestamp },
-            ...transactions,
-          ]);
-          return {
-            ...prop,
-            status: "accepted" as const,
-            messages: [
-              ...prop.messages,
-              { id: "m_ans_" + Date.now(), sender: prop.creatorName, text: "Accepted! Let's get started. Contract is active.", timestamp: "Just Now" },
-            ],
-          };
-        } else {
-          const refundBal = businessBalance + prop.budget;
-          setBusinessBalance(refundBal);
-          localStorage.setItem("inzozi_businessBalance", refundBal.toString());
-          saveTransactions([
-            { id: "tx_ref_" + Date.now(), type: "deposit", amount: prop.budget, description: `Escrow refund: "${prop.title}"`, date: timestamp },
-            ...transactions,
-          ]);
-          return {
-            ...prop,
-            status: "declined" as const,
-            messages: [
-              ...prop.messages,
-              { id: "m_ans_" + Date.now(), sender: prop.creatorName, text: "Declined the proposal. Thank you for your interest!", timestamp: "Just Now" },
-            ],
-          };
-        }
-      });
-      localStorage.setItem("inzozi_proposals", JSON.stringify(updated));
-      return updated;
-    });
+  const respondToProposal = async (
+    campaignId: string,
+    creatorId: string,
+    action: "accept" | "decline"
+  ) => {
+    const status = action === "accept" ? "ACCEPTED" : "DECLINED";
+    const result = await respondToOfferApi(campaignId, creatorId, status);
+    if (!result.ok) {
+      addNotification(result.message ?? "Could not update offer response.");
+      return;
+    }
     addNotification(`Sponsorship proposal ${action}ed.`);
+    await refreshProposals();
   };
-
-  // ---------------------------------------------------------------------------
-  // Admin
-  // ---------------------------------------------------------------------------
 
   const approveVerification = (id: string) => {
     const item = pendingVerifications.find((pv) => pv.id === id);
     if (!item) return;
-    // The item was added from backend data, so just remove from pending
     setPendingVerifications((prev) => prev.filter((pv) => pv.id !== id));
     addNotification(`Approved verification for "${item.name}".`);
-    // Refresh creators/businesses to reflect the now-verified status
     refreshCreators();
   };
 
@@ -1392,9 +1158,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("inzozi_notifications", JSON.stringify([]));
   };
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const readJson = <T,>(key: string): T | null => {
+      const saved = localStorage.getItem(key);
+      if (!saved) return null;
+      try {
+        return JSON.parse(saved) as T;
+      } catch {
+        localStorage.removeItem(key);
+        return null;
+      }
+    };
+
+    window.setTimeout(async () => {
+      const savedUser = readJson<AuthUser>("inzozi_currentUser");
+      const savedRole = localStorage.getItem("inzozi_activeRole") as Role | null;
+      const savedFanBalance = localStorage.getItem("inzozi_fanBalance");
+      const savedCreatorBalance = localStorage.getItem("inzozi_creatorBalance");
+      const savedBusinessBalance = localStorage.getItem("inzozi_businessBalance");
+      const savedAdminBalance = localStorage.getItem("inzozi_adminBalance");
+
+      if (savedUser) {
+        setCurrentUser(savedUser);
+        setActiveRole(savedUser.role);
+        setActiveTab(savedUser.role === "fan" || savedUser.role === "creator" ? "feed" : "dashboard");
+        await refreshCreators();
+        await refreshPosts();
+        await refreshDirectMessages();
+        await refreshProposals();
+      } else if (savedRole && ["landing", "creator", "business", "fan", "admin"].includes(savedRole)) {
+        setActiveRole(savedRole);
+        await refreshCreators();
+        await refreshPosts();
+      } else {
+        await refreshCreators();
+        await refreshPosts();
+      }
+
+      if (savedFanBalance) setFanBalance(parseFloat(savedFanBalance));
+      if (savedCreatorBalance) setCreatorBalance(parseFloat(savedCreatorBalance));
+      if (savedBusinessBalance) setBusinessBalance(parseFloat(savedBusinessBalance));
+      if (savedAdminBalance) setAdminBalance(parseFloat(savedAdminBalance));
+
+      setTransactions(readJson<WalletTransaction[]>("inzozi_transactions") ?? initialTransactions);
+      setProposals(readJson<Proposal[]>("inzozi_proposals") ?? []);
+      setDirectMessages(readJson<DirectMessageThread[]>("inzozi_directMessages") ?? []);
+      setNotifications(readJson<Notification[]>("inzozi_notifications") ?? initialNotifications);
+    }, 0);
+  }, []);
+
+  useEffect(() => {
+    if (activeRole !== "landing") localStorage.setItem("inzozi_activeRole", activeRole);
+  }, [activeRole]);
 
   return (
     <AppContext.Provider
@@ -1441,9 +1256,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         commentOnPost,
         launchCampaignProposal,
         startChat,
-        startDirectMessage,
         respondToProposal,
         sendMessageToProposal,
+        startDirectMessage,
         sendMessageToDirectMessage,
         approveVerification,
         rejectVerification,
