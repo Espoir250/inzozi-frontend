@@ -51,6 +51,7 @@ export default function CreatorPage({ params }: { params: Promise<{ id: string }
     startChat,
     startDirectMessage,
     subscribeToCreator,
+    followCreator,
   } = useApp();
 
   const creator = creators.find(c => c.id === id);
@@ -97,13 +98,8 @@ export default function CreatorPage({ params }: { params: Promise<{ id: string }
   const visiblePosts = creatorPosts.filter(post => isSubscribed || post.visibility === "public");
   const lockedPosts = creatorPosts.filter(post => !isSubscribed && post.visibility !== "public");
   
-  const followerCount = creator.followers 
-    + (isFollowing && !initialFollowingState ? 1 : 0) 
-    - (!isFollowing && initialFollowingState ? 1 : 0);
-    
-  const subscriberCount = creator.subscribersCount 
-    + (isSubscribed && !initialSubscribedState ? 1 : 0) 
-    - (!isSubscribed && initialSubscribedState ? 1 : 0);
+  const followerCount = creator.followers;
+  const subscriberCount = creator.subscribersCount;
 
   const username = creator.name.toLowerCase().replace(/[^a-z0-9]+/g, ".");
 
@@ -144,6 +140,7 @@ export default function CreatorPage({ params }: { params: Promise<{ id: string }
     const next = !isFollowing;
     setIsFollowing(next);
     persistIdList("inzozi_followed_creators", next);
+    followCreator(creator.id, next);
   };
 
   const handleSubscribe = () => {

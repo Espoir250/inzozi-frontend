@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { useApp, Creator, Post } from "@/context/AppContext";
 import Link from 'next/link';
-import { Rss, Filter, Heart, MessageSquare, Share2, Users, Briefcase, Wallet as WalletIcon, FileText, ImageIcon, Video, Play, ArrowLeft } from "lucide-react";
+import { Rss, Filter, Heart, MessageSquare, Share2, Users, Briefcase, Wallet as WalletIcon, FileText, ImageIcon, Video, Play, ArrowLeft, Send } from "lucide-react";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -24,6 +24,8 @@ export const BusinessDashboard: React.FC = () => {
     addNotification,
     activeTab,
     posts,
+    likePost,
+    commentOnPost,
   } = useApp();
 
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
@@ -36,6 +38,7 @@ export const BusinessDashboard: React.FC = () => {
   const [feedFilter, setFeedFilter] = useState<"all" | "public" | "subscriber" | "premium">("all");
   const [feedNiche, setFeedNiche] = useState<string>("all");
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [commentText, setCommentText] = useState<{ [postId: string]: string }>({});
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 10;
@@ -58,6 +61,8 @@ export const BusinessDashboard: React.FC = () => {
   const paginatedPosts = feedPosts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleLike = (postId: string) => {
+    // Persist like via backend
+    likePost(postId);
     setLikedPosts(prev => {
       const newLiked = new Set(prev);
       if (newLiked.has(postId)) {
@@ -67,6 +72,12 @@ export const BusinessDashboard: React.FC = () => {
       }
       return newLiked;
     });
+  };
+
+  const handleSendComment = (postId: string) => {
+    if (!commentText[postId]?.trim()) return;
+    commentOnPost(postId, commentText[postId]);
+    setCommentText({ ...commentText, [postId]: "" });
   };
 
   const toggleVideo = (postId: string) => {
@@ -265,9 +276,8 @@ export const BusinessDashboard: React.FC = () => {
                     className={`flex items-center gap-1.5 text-xs transition-all ${likedPosts.has(post.id) ? "text-rose-400" : "text-zinc-500 hover:text-rose-400"}`}
                   >
                     <Heart className={`w-4 h-4 ${likedPosts.has(post.id) ? "fill-current" : ""}`} />
-                    <span>{post.likes + (likedPosts.has(post.id) ? 1 : 0)}</span>
+                    <span>{post.likes + (likedPosts.has(post.id) ? 1 : 0)} Likes</span>
                   </button>
-                  {/* Engagement Ledger Comment */}
                   <span className="flex items-center gap-1.5 text-xs text-zinc-500">
                     <MessageSquare className="w-4 h-4" />
                     <span>{post.comments?.length || 0}</span>
@@ -276,6 +286,34 @@ export const BusinessDashboard: React.FC = () => {
                     <Share2 className="w-4 h-4" />
                     <span>Share</span>
                   </span>
+                </div>
+                {/* Comments List */}
+                {post.comments && post.comments.length > 0 && (
+                  <div className="flex flex-col gap-2 bg-white/2 rounded-xl p-3 border border-white/5 max-h-40 overflow-y-auto mt-2">
+                    {post.comments.map(c => (
+                      <div key={c.id} className="text-xs leading-relaxed">
+                        <span className="font-bold text-zinc-300 mr-1.5">{c.user}:</span>
+                        <span className="text-zinc-400">{c.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Add Comment Input */}
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    placeholder="Add a comment..."
+                    value={commentText[post.id] || ""}
+                    onChange={(e) => setCommentText({ ...commentText, [post.id]: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSendComment(post.id); }}
+                    className="w-full px-3.5 py-2 rounded-xl glass-input text-xs"
+                  />
+                  <button
+                    onClick={() => handleSendComment(post.id)}
+                    className="p-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white transition-all"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             );

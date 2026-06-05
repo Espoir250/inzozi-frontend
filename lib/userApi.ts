@@ -47,6 +47,66 @@ export type BackendUser = {
   profileImage?: string | null;
   role: string;
   verificationStatus: string;
+  creatorProfile?: {
+    id: string;
+    bio?: string | null;
+    specialization?: string | null;
+    socialLinks?: string | null;
+    followers?: number | null;
+    avatar?: string | null;
+    location?: string | null;
+    subscriptionFee?: number | null;
+  } | null;
+  _count?: {
+    creatorSubscriptions?: number;
+  };
+};
+
+export const setCreatorFollowStateApi = async (
+  creatorId: string,
+  following: boolean
+): Promise<{ followers: number; subscribersCount?: number }> => {
+  const accessToken = getAccessToken();
+
+  if (!accessToken) {
+    throw new Error("Please log in to follow creators.");
+  }
+
+  const response = await fetch(`${API_BASE_URL}/creator-profile/users/${creatorId}/follow`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ following }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response));
+  }
+
+  return response.json();
+};
+
+export const subscribeToCreatorApi = async (
+  creatorId: string
+): Promise<{ subscribersCount?: number }> => {
+  const accessToken = getAccessToken();
+
+  if (!accessToken) {
+    throw new Error("Please log in to subscribe.");
+  }
+
+  const response = await fetch(`${API_BASE_URL}/subscriptions/subscribe/${creatorId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response));
+  }
+
+  return response.json();
 };
 
 export const fetchUsersApi = async (): Promise<BackendUser[]> => {
@@ -61,5 +121,4 @@ export const fetchUsersApi = async (): Promise<BackendUser[]> => {
   const json = await response.json();
   return json.data ?? [];
 };
-
 

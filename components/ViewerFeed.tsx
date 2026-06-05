@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useApp, Post, Creator } from "@/context/AppContext";
 import { 
   Heart, 
@@ -106,6 +106,10 @@ export const ViewerFeed: React.FC = () => {
 
     return matchesSearch && matchesNiche;
   });
+
+  useEffect(() => {
+    setLikedPostIds(posts.filter((post) => post.liked).map((post) => post.id));
+  }, [posts]);
 
 
   const handleSubscribe = (creatorId: string) => {

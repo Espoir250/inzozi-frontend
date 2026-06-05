@@ -11,6 +11,16 @@ export type BackendContent = {
   price: number | null;
   currency: string | null;
   creatorId: string;
+  // Engagement fields returned by the enriched API
+  likes?: number;
+  liked?: boolean;
+  comments?: {
+    id: string;
+    userId: string;
+    user: string;
+    text: string;
+    createdAt: string;
+  }[];
 };
 
 export type CreateContentPayload = {
@@ -23,23 +33,37 @@ export type CreateContentPayload = {
   mediaFile?: File;
 };
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1").replace(/\/$/, "");
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1"
+).replace(/\/$/, "");
 
 const getAccessToken = () => {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("inzozi_accessToken");
 };
 
-const toBackendType = (type: FrontendContentType) => type === "text" ? "article" : type;
-const toBackendVisibility = (visibility: FrontendVisibility) => visibility === "public" ? "public" : "paid";
+const toBackendType = (type: FrontendContentType) =>
+  type === "text" ? "article" : type;
+
+const toBackendVisibility = (visibility: FrontendVisibility) =>
+  visibility === "public" ? "public" : "paid";
 
 const getErrorMessage = async (response: Response) => {
   const body = await response.json().catch(() => ({}));
   return body.error ?? body.message ?? "Request failed. Please try again.";
 };
 
+// ---------------------------------------------------------------------------
+// Fetch content list
+// Sends auth token when available so the API can return the correct
+// `liked` boolean for the logged-in user.
+// ---------------------------------------------------------------------------
 export const fetchContentList = async (): Promise<BackendContent[]> => {
-  const response = await fetch(`${API_BASE_URL}/content`);
+  const accessToken = getAccessToken();
+
+  const response = await fetch(`${API_BASE_URL}/content`, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
 
   if (!response.ok) {
     throw new Error(await getErrorMessage(response));
@@ -48,7 +72,12 @@ export const fetchContentList = async (): Promise<BackendContent[]> => {
   return response.json();
 };
 
-export const createContentWithApi = async (payload: CreateContentPayload): Promise<BackendContent> => {
+// ---------------------------------------------------------------------------
+// Create content
+// ---------------------------------------------------------------------------
+export const createContentWithApi = async (
+  payload: CreateContentPayload
+): Promise<BackendContent> => {
   const accessToken = getAccessToken();
 
   if (!accessToken) {
@@ -69,7 +98,10 @@ export const createContentWithApi = async (payload: CreateContentPayload): Promi
   } else if (payload.mediaUrl) {
     formData.append("contentUrl", payload.mediaUrl);
   } else {
-    formData.append("contentUrl", `https://local-storage.inzozi.test/articles/${Date.now()}`);
+    formData.append(
+      "contentUrl",
+      `https://local-storage.inzozi.test/articles/${Date.now()}`
+    );
   }
 
   if (backendVisibility === "paid") {
@@ -79,10 +111,71 @@ export const createContentWithApi = async (payload: CreateContentPayload): Promi
 
   const response = await fetch(`${API_BASE_URL}/content`, {
     method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response));
+  }
+
+  return response.json();
+};
+
+// ---------------------------------------------------------------------------
+// Like / unlike a post
+// Returns the updated like count and whether the current user has liked it.
+// The API toggles: calling it twice will like then unlike.
+// ---------------------------------------------------------------------------
+export const likeContentApi = async (
+  contentId: string
+): Promise<{ contentId: string; likes: number; liked: boolean }> => {
+  const accessToken = getAccessToken();
+
+  if (!accessToken) {
+    throw new Error("Please log in to like content.");
+  }
+
+  const response = await fetch(`${API_BASE_URL}/content/${contentId}/like`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response));
+  }
+
+  return response.json();
+};
+
+// ---------------------------------------------------------------------------
+// Comment on a post
+// Returns the saved comment object including the commenter's name.
+// ---------------------------------------------------------------------------
+export const commentOnContentApi = async (
+  contentId: string,
+  text: string
+): Promise<{
+  id: string;
+  contentId: string;
+  userId: string;
+  user: string;
+  text: string;
+  createdAt: string;
+}> => {
+  const accessToken = getAccessToken();
+
+  if (!accessToken) {
+    throw new Error("Please log in to comment.");
+  }
+
+  const response = await fetch(`${API_BASE_URL}/content/${contentId}/comment`, {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
     },
-    body: formData,
+    body: JSON.stringify({ text }),
   });
 
   if (!response.ok) {

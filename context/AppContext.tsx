@@ -16,8 +16,20 @@ import {
   createOfferApi,
   respondToOfferApi,
 } from "@/lib/campaignApi";
-import { BackendContent, createContentWithApi, fetchContentList } from "@/lib/contentApi";
-import { uploadProfileImageWithApi, fetchUsersApi, BackendUser } from "@/lib/userApi";
+import {
+  BackendContent,
+  commentOnContentApi,
+  createContentWithApi,
+  fetchContentList,
+  likeContentApi,
+} from "@/lib/contentApi";
+import {
+  uploadProfileImageWithApi,
+  fetchUsersApi,
+  BackendUser,
+  setCreatorFollowStateApi,
+  subscribeToCreatorApi,
+} from "@/lib/userApi";
 import {
   sendMessageApi,
   listConversationsApi,
@@ -109,6 +121,7 @@ export interface Post {
   visibility: "public" | "subscriber" | "premium";
   price?: number;
   likes: number;
+  liked?: boolean;
   comments: { id: string; user: string; text: string }[];
   isLocked?: boolean;
   unlockedBy: string[];
@@ -238,6 +251,7 @@ interface AppContextType {
   ) => void;
   tipCreator: (creatorId: string, amount: number) => boolean;
   subscribeToCreator: (creatorId: string) => boolean;
+  followCreator: (creatorId: string, following: boolean) => void;
   unlockPremiumPost: (postId: string) => boolean;
   createPost: (
     title: string,
@@ -283,20 +297,50 @@ const formatMessageDeliveryTime = (value?: string | null) => {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
+// ---------------------------------------------------------------------------
+// Engagement persistence helpers — keyed per user so different accounts
+// don't share likes/comments on the same device.
+// ---------------------------------------------------------------------------
+
+interface EngagementStore {
+  likedPostIds?: string[];
+  likeCounts?: { [postId: string]: number };
+  comments?: { [postId: string]: { id: string; user: string; text: string }[] };
+}
+
+const getEngagementStore = (userId: string): EngagementStore => {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(
+      localStorage.getItem(`inzozi_engagement_${userId}`) ?? "{}"
+    ) as EngagementStore;
+  } catch {
+    return {};
+  }
+};
+
+const saveEngagementStore = (userId: string, store: EngagementStore) => {
+  localStorage.setItem(`inzozi_engagement_${userId}`, JSON.stringify(store));
+};
+
+// ---------------------------------------------------------------------------
+// Backend → local model mappers
+// ---------------------------------------------------------------------------
+
 const backendUserToCreator = (u: BackendUser): Creator => ({
   id: u.id,
   name: u.name,
   avatar: u.profileImage ?? "🎨",
-  niche: "Creator",
-  followers: 0,
-  location: "",
+  niche: u.creatorProfile?.specialization ?? "Creator",
+  followers: u.creatorProfile?.followers ?? 0,
+  location: u.creatorProfile?.location ?? "",
   contact: u.email,
   engagement: "0%",
   collabPrice: 0,
   verified: u.verificationStatus === "VERIFIED",
-  bio: "",
-  subscribersCount: 0,
-  subscriptionFee: 0,
+  bio: u.creatorProfile?.bio ?? "",
+  subscribersCount: u._count?.creatorSubscriptions ?? 0,
+  subscriptionFee: u.creatorProfile?.subscriptionFee ?? 0,
 });
 
 const backendUserToBusiness = (u: BackendUser): Business => ({
@@ -310,7 +354,13 @@ const backendUserToBusiness = (u: BackendUser): Business => ({
   bio: "",
 });
 
-const backendContentToPost = (content: BackendContent, creatorsList: Creator[]): Post => {
+/**
+ * Convert a backend content item to a local Post using shared API engagement.
+ */
+const backendContentToPost = (
+  content: BackendContent,
+  creatorsList: Creator[]
+): Post => {
   const creator = creatorsList.find((c) => c.id === content.creatorId);
   const postType =
     content.type === "article" ? "text" : content.type === "audio" ? "video" : content.type;
@@ -326,11 +376,20 @@ const backendContentToPost = (content: BackendContent, creatorsList: Creator[]):
     mediaUrl: content.contentUrl,
     visibility,
     price: content.price ?? undefined,
-    likes: 0,
-    comments: [],
+    likes: content.likes ?? 0,
+    liked: content.liked ?? false,
+    comments: (content.comments ?? []).map((comment) => ({
+      id: comment.id,
+      user: comment.user,
+      text: comment.text,
+    })),
     unlockedBy: [],
   };
 };
+
+// ---------------------------------------------------------------------------
+// Initial seed data
+// ---------------------------------------------------------------------------
 
 const initialTransactions: WalletTransaction[] = [
   {
@@ -365,6 +424,10 @@ const initialNotifications: Notification[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [activeRole, setActiveRole] = useState<Role>("landing");
@@ -388,6 +451,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [pendingVerifications, setPendingVerifications] = useState<
     { id: string; name: string; type: "creator" | "business"; niche: string; bio: string }[]
   >([]);
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
 
   const saveTransactions = (newTx: WalletTransaction[]) => {
     setTransactions(newTx);
@@ -421,7 +488,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const saveUserProfile = (user: AuthUser) => {
     const users = getRegisteredUsers();
     const normalizedEmail = user.email?.trim().toLowerCase();
-    const updatedUsers = [user, ...users.filter((item) => item.email?.toLowerCase() !== normalizedEmail)];
+    const updatedUsers = [
+      user,
+      ...users.filter((item) => item.email?.toLowerCase() !== normalizedEmail),
+    ];
     localStorage.setItem("inzozi_user_profiles", JSON.stringify(updatedUsers));
   };
 
@@ -439,6 +509,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveTab(user.role === "fan" || user.role === "creator" ? "feed" : "dashboard");
   };
 
+  // ---------------------------------------------------------------------------
+  // Data refresh
+  // ---------------------------------------------------------------------------
+
   const refreshCreators = async () => {
     setIsLoadingCreators(true);
     try {
@@ -455,6 +529,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  /**
+   * Fetch posts from the API with shared likes and comments.
+   */
   const refreshPosts = async () => {
     setIsLoadingPosts(true);
     try {
@@ -556,6 +633,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn("refreshProposals error", err);
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // Auth
+  // ---------------------------------------------------------------------------
 
   const registerUser = async (payload: RegisterUserPayload) => {
     const normalizedEmail = payload.email.trim().toLowerCase();
@@ -660,6 +741,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDirectMessages([]);
   };
 
+  // ---------------------------------------------------------------------------
+  // Profile updates
+  // ---------------------------------------------------------------------------
+
   const updateFanProfile = async (updates: Partial<AuthUser> & { avatarFile?: File }) => {
     if (!currentUser) {
       return { ok: false, message: "Please log in before updating your profile." };
@@ -706,8 +791,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       avatar = uploaded.profileImage;
     }
     const existingCreator = creators.find((c) => c.id === creatorId);
-    const nextName = updates.name?.trim() || existingCreator?.name || currentUser?.fullName || "Creator";
-    const nextAvatar = avatar?.trim() || existingCreator?.avatar || currentUser?.avatar || "";
+    const nextName =
+      updates.name?.trim() || existingCreator?.name || currentUser?.fullName || "Creator";
+    const nextAvatar =
+      avatar?.trim() || existingCreator?.avatar || currentUser?.avatar || "";
 
     setCreators((prev) =>
       prev.map((c) =>
@@ -728,7 +815,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setPosts((prev) =>
       prev.map((post) =>
-        post.creatorId !== creatorId ? post : { ...post, creatorName: nextName, creatorAvatar: nextAvatar }
+        post.creatorId !== creatorId
+          ? post
+          : { ...post, creatorName: nextName, creatorAvatar: nextAvatar }
       )
     );
 
@@ -748,6 +837,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification("Creator profile updated.");
     return { ok: true, message: "Creator profile updated successfully." };
   };
+
+  // ---------------------------------------------------------------------------
+  // Wallet
+  // ---------------------------------------------------------------------------
 
   const deposit = (amount: number, target: "fan" | "business") => {
     const timestamp = new Date().toISOString().split("T")[0];
@@ -824,8 +917,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("inzozi_adminBalance", newAdminBal.toString());
     const creatorName = creators.find((c) => c.id === creatorId)?.name ?? "Creator";
     saveTransactions([
-      { id: "tx_fan_" + Date.now(), type: "tip_sent", amount, description: `Tip sent to ${creatorName}`, date: timestamp },
-      { id: "tx_cr_" + Date.now(), type: "tip_received", amount: netEarnings, description: `Tip from Fan (Net: $${netEarnings.toFixed(2)})`, date: timestamp },
+      {
+        id: "tx_fan_" + Date.now(),
+        type: "tip_sent",
+        amount,
+        description: `Tip sent to ${creatorName}`,
+        date: timestamp,
+      },
+      {
+        id: "tx_cr_" + Date.now(),
+        type: "tip_received",
+        amount: netEarnings,
+        description: `Tip from Fan (Net: $${netEarnings.toFixed(2)})`,
+        date: timestamp,
+      },
       ...transactions,
     ]);
     addNotification(`Sent $${amount.toFixed(2)} tip to ${creatorName}!`);
@@ -858,12 +963,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     const creatorName = creator?.name ?? "Creator";
     saveTransactions([
-      { id: "tx_sub_fan_" + Date.now(), type: "subscription_paid", amount: subscriptionFee, description: `Subscribed to ${creatorName}`, date: timestamp },
-      { id: "tx_sub_cr_" + Date.now(), type: "subscription_earned", amount: netEarnings, description: `New Subscriber (Net: $${netEarnings.toFixed(2)})`, date: timestamp },
+      {
+        id: "tx_sub_fan_" + Date.now(),
+        type: "subscription_paid",
+        amount: subscriptionFee,
+        description: `Subscribed to ${creatorName}`,
+        date: timestamp,
+      },
+      {
+        id: "tx_sub_cr_" + Date.now(),
+        type: "subscription_earned",
+        amount: netEarnings,
+        description: `New Subscriber (Net: $${netEarnings.toFixed(2)})`,
+        date: timestamp,
+      },
       ...transactions,
     ]);
     addNotification(`Subscribed successfully to ${creatorName}!`);
+    subscribeToCreatorApi(creatorId)
+      .then((result) => {
+        if (typeof result.subscribersCount === "number") {
+          setCreators((prev) =>
+            prev.map((c) =>
+              c.id === creatorId ? { ...c, subscribersCount: result.subscribersCount! } : c
+            )
+          );
+        } else {
+          refreshCreators();
+        }
+      })
+      .catch((error) => addNotification(error.message ?? "Subscription could not be saved."));
     return true;
+  };
+
+  const followCreator = (creatorId: string, following: boolean) => {
+    setCreators((prev) =>
+      prev.map((c) =>
+        c.id === creatorId
+          ? { ...c, followers: Math.max(0, c.followers + (following ? 1 : -1)) }
+          : c
+      )
+    );
+
+    setCreatorFollowStateApi(creatorId, following)
+      .then((profile) => {
+        setCreators((prev) =>
+          prev.map((c) =>
+            c.id === creatorId
+              ? {
+                  ...c,
+                  followers: profile.followers,
+                  subscribersCount: profile.subscribersCount ?? c.subscribersCount,
+                }
+              : c
+          )
+        );
+      })
+      .catch((error) => addNotification(error.message ?? "Follow could not be saved."));
   };
 
   const unlockPremiumPost = (postId: string): boolean => {
@@ -888,17 +1044,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("inzozi_adminBalance", newAdminBal.toString());
     setPosts((prev) =>
       prev.map((p) =>
-        p.id === postId ? { ...p, unlockedBy: [...(p.unlockedBy || []), currentUser?.id ?? ""], isLocked: false } : p
+        p.id === postId
+          ? { ...p, unlockedBy: [...(p.unlockedBy || []), currentUser?.id ?? ""], isLocked: false }
+          : p
       )
     );
     saveTransactions([
-      { id: "tx_unl_fan_" + Date.now(), type: "unlock_paid", amount: price, description: `Unlocked: "${post.title}"`, date: timestamp },
-      { id: "tx_unl_cr_" + Date.now(), type: "unlock_earned", amount: netEarnings, description: `Content sale: "${post.title}" (Net: $${netEarnings.toFixed(2)})`, date: timestamp },
+      {
+        id: "tx_unl_fan_" + Date.now(),
+        type: "unlock_paid",
+        amount: price,
+        description: `Unlocked: "${post.title}"`,
+        date: timestamp,
+      },
+      {
+        id: "tx_unl_cr_" + Date.now(),
+        type: "unlock_earned",
+        amount: netEarnings,
+        description: `Content sale: "${post.title}" (Net: $${netEarnings.toFixed(2)})`,
+        date: timestamp,
+      },
       ...transactions,
     ]);
     addNotification(`Unlocked premium content: "${post.title}"`);
     return true;
   };
+
+  // ---------------------------------------------------------------------------
+  // Posts / engagement
+  // ---------------------------------------------------------------------------
 
   const createPost = async (
     title: string,
@@ -925,18 +1099,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const likePost = (postId: string) => {
-    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, likes: p.likes + 1 } : p)));
+    likeContentApi(postId)
+      .then((result) => {
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, likes: result.likes, liked: result.liked } : p
+          )
+        );
+      })
+      .catch((error) => addNotification(error.message ?? "Like could not be saved."));
   };
 
   const commentOnPost = (postId: string, text: string) => {
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? { ...p, comments: [...p.comments, { id: "cm_" + Date.now(), user: currentUser?.fullName ?? "You", text }] }
-          : p
-      )
-    );
+    commentOnContentApi(postId, text)
+      .then((comment) => {
+        const newComment = {
+          id: comment.id,
+          user: comment.user,
+          text: comment.text,
+        };
+
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, comments: [...p.comments, newComment] } : p
+          )
+        );
+      })
+      .catch((error) => addNotification(error.message ?? "Comment could not be saved."));
   };
+
+  // ---------------------------------------------------------------------------
+  // Campaigns / proposals
+  // ---------------------------------------------------------------------------
 
   const launchCampaignProposal = async (
     campaignId: string,
@@ -982,6 +1176,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification(`Sent proposal to ${creatorName}.`);
   };
 
+  // ---------------------------------------------------------------------------
+  // Messaging
+  // ---------------------------------------------------------------------------
+
   const startChat = (partnerId: string, partnerName: string) => {
     if (!currentUser) return;
     if (partnerId === currentUser.id) {
@@ -1026,7 +1224,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const thread = directMessages.find((dm) => dm.id === threadId);
     if (!thread) return false;
 
-    const receiverId = currentUser.id === thread.fanId ? thread.creatorId : thread.fanId;
+    const receiverId =
+      currentUser.id === thread.fanId ? thread.creatorId : thread.fanId;
     if (!receiverId || receiverId === currentUser.id) {
       addNotification("Could not send message: invalid receiver.", "messages");
       return false;
@@ -1119,6 +1318,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await refreshProposals();
   };
 
+  // ---------------------------------------------------------------------------
+  // Admin
+  // ---------------------------------------------------------------------------
+
   const approveVerification = (id: string) => {
     const item = pendingVerifications.find((pv) => pv.id === id);
     if (!item) return;
@@ -1158,6 +1361,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem("inzozi_notifications", JSON.stringify([]));
   };
 
+  // ---------------------------------------------------------------------------
+  // Bootstrap on mount
+  // ---------------------------------------------------------------------------
+
   useEffect(() => {
     const readJson = <T,>(key: string): T | null => {
       const saved = localStorage.getItem(key);
@@ -1181,12 +1388,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedUser) {
         setCurrentUser(savedUser);
         setActiveRole(savedUser.role);
-        setActiveTab(savedUser.role === "fan" || savedUser.role === "creator" ? "feed" : "dashboard");
+        setActiveTab(
+          savedUser.role === "fan" || savedUser.role === "creator" ? "feed" : "dashboard"
+        );
         await refreshCreators();
         await refreshPosts();
         await refreshDirectMessages();
         await refreshProposals();
-      } else if (savedRole && ["landing", "creator", "business", "fan", "admin"].includes(savedRole)) {
+      } else if (
+        savedRole &&
+        ["landing", "creator", "business", "fan", "admin"].includes(savedRole)
+      ) {
         setActiveRole(savedRole);
         await refreshCreators();
         await refreshPosts();
@@ -1200,16 +1412,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (savedBusinessBalance) setBusinessBalance(parseFloat(savedBusinessBalance));
       if (savedAdminBalance) setAdminBalance(parseFloat(savedAdminBalance));
 
-      setTransactions(readJson<WalletTransaction[]>("inzozi_transactions") ?? initialTransactions);
+      setTransactions(
+        readJson<WalletTransaction[]>("inzozi_transactions") ?? initialTransactions
+      );
       setProposals(readJson<Proposal[]>("inzozi_proposals") ?? []);
       setDirectMessages(readJson<DirectMessageThread[]>("inzozi_directMessages") ?? []);
-      setNotifications(readJson<Notification[]>("inzozi_notifications") ?? initialNotifications);
+      setNotifications(
+        readJson<Notification[]>("inzozi_notifications") ?? initialNotifications
+      );
     }, 0);
   }, []);
 
   useEffect(() => {
     if (activeRole !== "landing") localStorage.setItem("inzozi_activeRole", activeRole);
   }, [activeRole]);
+
+  // ---------------------------------------------------------------------------
+  // Context value
+  // ---------------------------------------------------------------------------
 
   return (
     <AppContext.Provider
@@ -1250,6 +1470,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         withdraw,
         tipCreator,
         subscribeToCreator,
+        followCreator,
         unlockPremiumPost,
         createPost,
         likePost,
