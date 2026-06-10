@@ -2,18 +2,266 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #050505;
+  --card-bg: #ffffff;
+  --card-border: #e5e5e5;
+  
+  /* Brand Palettes */
+  --primary-glow: none;
+  --secondary-glow: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --color-primary: #050505;
+  --color-secondary: #404040;
+  --color-dark-bg: #ffffff;
+  --color-dark-card: #ffffff;
+  --color-light-accent: #f5f5f5;
+  --font-sans: "Outfit", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+button:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #050505;
+  outline-offset: 2px;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5f5f5;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #a3a3a3;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #404040;
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  box-shadow: 0 10px 30px -24px rgba(0, 0, 0, 0.35);
+}
+
+.glass-panel-light {
+  background: #fafafa;
+  border: 1px solid #e5e5e5;
+}
+
+.glass-input {
+  background: #ffffff;
+  border: 1px solid #d4d4d4;
+  color: #050505;
+  transition: all 0.2s ease-in-out;
+}
+
+.glass-input:focus {
+  background: #ffffff;
+  border-color: #050505;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(5, 5, 5, 0.08);
+}
+
+/* Gradients */
+.text-gradient-brand {
+  background: #050505;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.bg-gradient-brand {
+  background: #050505;
+}
+
+.bg-gradient-dark {
+  background: #ffffff;
+}
+
+/* Pulsing Decorative Glows */
+.glow-spot-1 {
+  display: none;
+}
+
+.glow-spot-2 {
+  display: none;
+}
+
+@keyframes float-glow {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(50px, 30px) scale(1.1);
+  }
+  100% {
+    transform: translate(-30px, -50px) scale(0.9);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+/* Micro-animations */
+.hover-scale {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-scale:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 14px 30px -20px rgba(0, 0, 0, 0.45);
+}
+
+.badge-glow {
+  box-shadow: 0 0 0 3px rgba(5, 5, 5, 0.08);
+}
+
+/* Light theme overrides for the existing utility-heavy components */
+.text-white,
+.text-zinc-200,
+.text-zinc-300 {
+  color: #050505 !important;
+}
+
+.text-zinc-400,
+.text-zinc-500,
+.text-zinc-600 {
+  color: #525252 !important;
+}
+
+.text-purple-200,
+.text-purple-300,
+.text-purple-400,
+.text-purple-500,
+.text-cyan-300,
+.text-cyan-400,
+.text-cyan-500,
+.text-amber-300,
+.text-amber-400,
+.text-amber-500,
+.text-rose-300,
+.text-rose-400,
+.text-rose-500,
+.text-emerald-300,
+.text-emerald-400,
+.text-emerald-500 {
+  color: #050505 !important;
+}
+
+[class*="text-purple-"],
+[class*="text-cyan-"],
+[class*="text-amber-"],
+[class*="text-rose-"],
+[class*="text-emerald-"] {
+  color: #050505 !important;
+}
+
+.bg-white\/2,
+.bg-white\/3,
+.bg-white\/5 {
+  background-color: #fafafa !important;
+}
+
+.hover\:bg-white\/3:hover,
+.hover\:bg-white\/5:hover,
+.hover\:bg-white\/8:hover,
+.hover\:bg-white\/10:hover {
+  background-color: #f0f0f0 !important;
+}
+
+.border-white\/5,
+.border-white\/10 {
+  border-color: #e5e5e5 !important;
+}
+
+.shadow-purple-500\/5,
+.shadow-purple-500\/10,
+.shadow-purple-500\/15,
+.shadow-purple-500\/20 {
+  box-shadow: 0 14px 30px -24px rgba(0, 0, 0, 0.5) !important;
+}
+
+.bg-purple-600,
+.hover\:bg-purple-500:hover,
+.bg-rose-600,
+.hover\:bg-rose-500:hover,
+.bg-emerald-600,
+.hover\:bg-emerald-500:hover {
+  background-color: #050505 !important;
+  color: #ffffff !important;
+}
+
+.bg-gradient-brand.text-white,
+.bg-purple-600.text-white,
+.bg-rose-600.text-white,
+.bg-emerald-600.text-white,
+button.bg-gradient-brand,
+button.bg-purple-600,
+button.bg-rose-600,
+button.bg-emerald-600 {
+  color: #ffffff !important;
+}
+
+button.bg-gradient-brand *,
+button.bg-purple-600 *,
+button.bg-rose-600 *,
+button.bg-emerald-600 * {
+  color: #ffffff !important;
+}
+
+button.bg-gradient-brand:hover,
+button.bg-purple-600:hover,
+button.bg-rose-600:hover,
+button.bg-emerald-600:hover {
+  background: #262626 !important;
+  border-color: #262626 !important;
+}
+
+.force-white,
+.force-white * {
+  color: #ffffff !important;
+}
+
+.force-black,
+.force-black * {
+  color: #050505 !important;
+}
+
+button.bg-black,
+a.bg-black,
+button.bg-black *,
+a.bg-black * {
+  color: #ffffff !important;
 }
