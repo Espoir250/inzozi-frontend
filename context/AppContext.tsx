@@ -1124,15 +1124,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const likePost = (postId: string) => {
-    likeContentApi(postId)
-      .then((result) => {
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.id === postId ? { ...p, likes: result.likes, liked: result.liked } : p
-          )
-        );
-      })
-      .catch((error) => addNotification(error.message ?? "Like could not be saved."));
+  // Optimistically call backend
+  likeContentApi(postId)
+    .then((result) => {
+      // Update posts state with backend result
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, likes: result.likes, liked: result.liked } : p
+        )
+      );
+      // Update local engagement store per user
+      if (currentUser) {
+        const store = getEngagementStore(currentUser.id);
+        const likedSet = new Set(store.likedPostIds ?? []);
+        if (likedSet.has(postId)) {
+          likedSet.delete(postId);
+          // decrement local like count if present
+          if (store.likeCounts && store.likeCounts[postId] !== undefined) {
+            store.likeCounts[postId] = Math.max(0, store.likeCounts[postId] - 1);
+          }
+        } else {
+          likedSet.add(postId);
+          store.likeCounts = {
+            ...store.likeCounts,
+            [postId]: (store.likeCounts?.[postId] ?? 0) + 1,
+          };
+        }
+        store.likedPostIds = Array.from(likedSet);
+        saveEngagementStore(currentUser.id, store);
+      }
+    })
+    .catch((error) => addNotification(error.message ?? "Like could not be saved."));
   };
 
   const commentOnPost = (postId: string, text: string) => {

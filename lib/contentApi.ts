@@ -34,7 +34,7 @@ export type CreateContentPayload = {
 };
 
 const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1"
+  process.env.NEXT_PUBLIC_API_URL ?? "https://inzozi-market-api-lzd6.onrender.com/api/v1"
 ).replace(/\/$/, "");
 
 const getAccessToken = () => {
